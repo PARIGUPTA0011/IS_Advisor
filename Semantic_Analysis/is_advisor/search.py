@@ -325,9 +325,12 @@ class Retriever:
         """Split a tender, retrieve per line item, and return the KG contract shape."""
         results: list[ItemResult] = []
         for item in query_mod.parse_document(document, self.nlp):
-            # Read requirements from the raw line, not the stripped query:
-            # boilerplate stripping removes the quantities this needs.
-            requirements = extract_requirements(item.raw, item.pairs, self.nlp)
+            # Citations come out first: with them in, "conforming to IS 269"
+            # was read as a quantity of 269 tonnes. The fully stripped query
+            # cannot be used instead, because it has the units removed too.
+            requirements = extract_requirements(
+                query_mod.strip_citations(item.raw), item.pairs, self.nlp
+            )
             candidates = self.retrieve(item.text, top_k=top_k, use_reranker=use_reranker)
             cited = [self.resolve_citation(base) for base in item.cited_is]
 

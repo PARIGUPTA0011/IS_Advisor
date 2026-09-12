@@ -42,12 +42,18 @@ _BOILERPLATE_PATTERNS = [
     r"\bor\s+equivalent\b",
     r"\b(?:with\s+)?ISI\s+mark(?:ed|ing)?\b",
     r"\b(?:approved|reputed|standard)\s+(?:make|brand|quality)\b",
+    # Tender unit codes in the quantity column: "... MT 120", "... SQM 900".
+    # Whole words only, per the word-boundary bug in the README bug table.
+    r"\b(?:MT|RM|SQM|CUM|CUM\.|LS|EACH)\b\s*[\d.,]*",
 ]
 _BOILERPLATE_RE = re.compile("|".join(_BOILERPLATE_PATTERNS), re.IGNORECASE)
 
 _UNIT_RE = re.compile(
     r"\b\d+(?:[.,]\d+)?\s*(?:mm|cm|m|km|kg|gm?|g|ton(?:ne)?s?|mt|ltr?s?|l|ml|nos|pcs|pieces|"
-    r"sets?|sqm|cum|m2|m3|kw|kva|kv|volts?|v|amps?|amperes?|hz|watts?|w|bar|psi|inch(?:es)?|ft)\b",
+    r"sets?|sqm|cum|m2|m3|kw|kva|kv|volts?|v|amps?|amperes?|hz|watts?|w|bar|psi|inch(?:es)?|ft)\b"
+    # "3 G.I. pipes" is a row index and an abbreviation, not three grams. Without
+    # this the G was eaten and the item searched on "I. pipes".
+    r"(?!\s*\.\s*[A-Za-z])",
     re.IGNORECASE,
 )
 _WS_RE = re.compile(r"\s+")
@@ -98,11 +104,46 @@ def extract_is_numbers(text: str) -> list[str]:
     return found
 
 
+# The serial-number column of a schedule of quantities. Stripped only at the
+# very start of a row, so "3 G.I. pipes" loses the row index while "25 mm bore"
+# keeps its measurement.
+_ROW_INDEX_RE = re.compile(r"^\s*\d{1,3}(?=\s+[A-Za-z])")
+
+# A row whose cells are all generic column labels is the table header. Searching
+# it returned a pesticide standard, because "SL" is a formulation code in BIS
+# titles.
+_HEADER_CELL_WORDS = frozenset({
+    "sl", "sr", "s", "no", "nos", "item", "items", "description", "particulars",
+    "unit", "units", "qty", "quantity", "rate", "amount", "total", "of", "the",
+    "code", "sn", "srno", "slno", "remarks",
+})
+
+
+def is_table_header(text: str) -> bool:
+    """True when a row is column labels rather than a procurement item."""
+    words = re.findall(r"[A-Za-z]+", text or "")
+    if not 2 <= len(words) <= 8:
+        return False
+    return all(word.lower() in _HEADER_CELL_WORDS for word in words)
+
+
+def strip_citations(text: str) -> str:
+    """Remove IS citations, leaving everything else intact.
+
+    Requirement extraction reads this rather than the raw line: with the
+    citations still in, "conforming to IS 269" was read as a quantity of 269
+    tonnes. It cannot read the fully stripped query instead, because that has
+    the units removed too and the quantities would go with them.
+    """
+    return _WS_RE.sub(" ", IS_NUMBER_RE.sub(" ", text or "")).strip()
+
+
 def strip_boilerplate(text: str, drop_citations: bool = True) -> str:
     """Remove procurement filler. Citations go too: they are matched exactly
     elsewhere, and their digits only add noise to the semantic query."""
     if drop_citations:
         text = IS_NUMBER_RE.sub(" ", text)
+    text = _ROW_INDEX_RE.sub(" ", text)
     text = _BOILERPLATE_RE.sub(" ", text)
     text = _UNIT_RE.sub(" ", text)
     text = re.sub(r"[\d,]{4,}", " ", text)          # bare quantities and prices
@@ -162,13 +203,54 @@ def _kv_block_text(pairs: list[tuple[str, str]], title: str | None) -> str:
     return ", ".join(p for p in parts if p)
 
 
+# A wrapped line continues a sentence; a new line item starts one. PDFs hard-wrap
+# prose mid-sentence, and every newline was being treated as an item boundary, so
+# "...for the water" and "distribution network." became two searches describing
+# nothing.
+_TERMINAL_PUNCTUATION = (".", ";", ":", "!", "?")
+# Table rows arrive whole and must never be glued to the row beneath them.
+_TABLE_ROW_RE = re.compile(r"^\s*\d{1,3}\s+\S|\b(?:MT|RM|SQM|CUM|NOS|LS|KG|LTR|EACH)\s+[\d.,]+\s*$",
+                           re.IGNORECASE)
+
+
+def rejoin_wrapped_lines(document: str) -> str:
+    """Undo hard wrapping so a sentence is one line again.
+
+    A line is joined to the next only when the first clearly does not end and the
+    second clearly does not begin: no terminal punctuation above, and a lowercase
+    word below. Requiring the lowercase start is what keeps headings, table rows
+    and numbered items from being swallowed by the paragraph above them.
+    """
+    lines = (document or "").splitlines()
+    out: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if not out or not stripped:
+            out.append(line)
+            continue
+        previous = out[-1].strip()
+        if (
+            previous
+            and not previous.endswith(_TERMINAL_PUNCTUATION)
+            and stripped[:1].islower()
+            and not _BULLET_RE.match(line)
+            and not _KV_LINE_RE.match(line)
+            and not is_heading(previous, [])
+            and not _TABLE_ROW_RE.search(previous)
+        ):
+            out[-1] = f"{out[-1].rstrip()} {stripped}"
+            continue
+        out.append(line)
+    return "\n".join(out)
+
+
 def segment_document(document: str) -> list[Segment]:
     """Split a document into segments, each of which becomes one line item.
 
     Runs ahead of the line splitter so that a specification block is recognised
     before newline splitting takes it apart.
     """
-    lines = (document or "").splitlines()
+    lines = rejoin_wrapped_lines(document or "").splitlines()
     segments: list[Segment] = []
     index = 0
 
@@ -272,6 +354,14 @@ def load_spacy(model: str = "en_core_web_sm"):
         return None
 
 
+# "SECTION B", "Annexure II", "Schedule A" label a part of the document however
+# long the rest of the line runs.
+_SECTION_HEADING_RE = re.compile(
+    r"^(?:section|part|annexure|annex|appendix|schedule|chapter)\s+[A-Za-z0-9IVX]+(?![A-Za-z0-9])",
+    re.IGNORECASE,
+)
+
+
 def is_heading(raw: str, cited: list[str]) -> bool:
     """Section headings describe no product, so retrieving against them only
     produces confident nonsense ("NOTICE INVITING TENDER" -> whatever is nearest
@@ -282,10 +372,22 @@ def is_heading(raw: str, cited: list[str]) -> bool:
     stripped = raw.strip()
     if stripped.endswith(":"):
         return True
-    letters = [c for c in stripped if c.isalpha()]
-    if letters and all(c.isupper() for c in letters) and len(stripped.split()) <= 6:
+    if _SECTION_HEADING_RE.match(stripped):
         return True
-    return False
+    letters = [c for c in stripped if c.isalpha()]
+    # Ten words, not six: "SECTION B - SANITARY AND WATER SUPPLY ITEMS" is seven
+    # and was being searched as though it described a product. Raising the cap
+    # risks dropping real items, since tenders do write descriptions in capitals,
+    # so a line carrying a digit is never a heading: "GI PIPES 25 MM MEDIUM
+    # CLASS" is an item, "GENERAL CONDITIONS" is not.
+    if (
+        letters
+        and all(c.isupper() for c in letters)
+        and len(stripped.split()) <= 10
+        and not any(c.isdigit() for c in stripped)
+    ):
+        return True
+    return is_table_header(stripped)
 
 
 def parse_document(document: str, nlp=None) -> list[LineItem]:

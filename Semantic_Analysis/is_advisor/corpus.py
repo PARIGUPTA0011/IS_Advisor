@@ -22,7 +22,12 @@ _REVISION_RE = re.compile(
     re.IGNORECASE,
 )
 # The scrape mangled smart quotes into U+FFFD and backticks; they split tokens.
-_JUNK_CHARS_RE = re.compile(r"[�`‘’“”]")
+# 845 titles carry the three-character sequence that results from reading the
+# UTF-8 bytes of U+FFFD as Latin-1, which is what actually sits in the CSV. The
+# original character is already lost and cannot be recovered, only normalised,
+# and it becomes a space rather than a dash because it stands for different
+# characters in different titles.
+_JUNK_CHARS_RE = re.compile(r"ï¿½|[�`‘’“”]")
 # The scrape turned some en-dashes into '?'; leaving them in splits tokens badly.
 _MOJIBAKE_RE = re.compile(r"\s[?]\s")
 _WS_RE = re.compile(r"\s+")
@@ -48,6 +53,9 @@ def clean_text(value) -> str:
 def load_standards() -> pd.DataFrame:
     df = pd.read_csv(config.STANDARDS_CSV, low_memory=False)
     df["is_year"] = pd.to_numeric(df["is_year"], errors="coerce")
+    # 12 rows carry a lowercase "Is " prefix. It is a display wart rather than a
+    # retrieval problem, but a judge reading "Is 1791:2020" sees a typo.
+    df["is_number"] = df["is_number"].astype(str).str.replace(r"^Is\b", "IS", regex=True)
     return df
 
 

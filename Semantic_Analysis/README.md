@@ -132,6 +132,13 @@ The 54.4% figure is why `aspect` and `group` are boosts and never filters. A har
 silently discards roughly half of the newest standards, which are exactly the 2025 and 2026 editions
 a procurement tool most needs to surface.
 
+**Source damage that can only be normalised, not repaired.** 845 titles carry a three-character
+mojibake sequence where a punctuation character used to be, the result of the scrape reading UTF-8
+bytes as Latin-1. The original character is already lost, and it stood for different characters in
+different titles, so cleaning replaces it with a space rather than guessing a dash. A further 12
+rows carry a lowercase `Is ` number prefix, normalised to `IS `. Both are display problems more than
+retrieval problems, but a judge reading the output sees them.
+
 One estimate did not survive contact with the data. The plan expects 3,711 base ids to have
 differently-worded past editions, measured on raw titles. After stripping revision markers and
 encoding damage, only **1,808** gain any genuinely new word. Most of the apparent difference was
@@ -143,6 +150,7 @@ encoding damage, only **1,808** gain any genuinely new word. Most of the apparen
 
 ```
 tender text or PDF
+  -> rejoin hard-wrapped lines  a wrapped sentence is one item, not three
   -> detect Key: value specification blocks   one block is one line item
   -> split into line items      bullets, numbering, table rows, inline sub-items
   -> drop section headings
@@ -163,22 +171,30 @@ valve" is three products, and a bullet character says so more reliably than any 
 Each line item is retrieved separately. Embedding a whole tender as one vector averages six products
 into a point that matches none of them.
 
-Five rules do the work:
+Six rules do the work:
 
-1. **Specification blocks.** Two or more consecutive `Key: value` lines are one product described
+1. **Rejoining wrapped lines.** A PDF hard-wraps prose mid-sentence, and every newline used to be an
+   item boundary, so "…for the water" and "distribution network." became two searches describing
+   nothing. A line joins the next only when the first has no terminal punctuation and the second
+   starts with a lowercase word. Requiring that lowercase start is what stops a heading, a table row
+   or a numbered item from being swallowed by the paragraph above it.
+2. **Specification blocks.** Two or more consecutive `Key: value` lines are one product described
    attribute by attribute, not several products. The block collapses to a single line item whose
    query is built from the values, with the product name taken from a title line above the block or
    from a `Product`/`Item`/`Description` key. Commercial keys such as `Warranty` and `Quantity` are
    kept for display but left out of the query. This runs before line splitting, because splitting
    first destroys the structure that identifies the block.
-2. **Row splitting** on newlines and semicolons. Table pipes flatten to spaces rather than splitting,
+3. **Row splitting** on newlines and semicolons. Table pipes flatten to spaces rather than splitting,
    because a table row is one line item and `|` only separates cells inside it.
-3. **Sub-item splitting** on inline markers like `a)` and `2.`, refusing to split after "Part",
+4. **Sub-item splitting** on inline markers like `a)` and `2.`, refusing to split after "Part",
    "Sec", "Clause", "Table", "Grade", "Type" or "Class" so that `IS 8329 (Part 1)` stays intact.
-4. **Boilerplate stripping** of procurement filler: "shall be supplied", "as per", "make/brand",
+5. **Boilerplate stripping** of procurement filler: "shall be supplied", "as per", "make/brand",
    bidder and contractor references, quantities, rates, delivery and warranty terms, "ISI marked",
-   "or equivalent".
-5. **Citation extraction** handling `IS 1786`, `IS 1786:2008`, `IS:456-2000`, `IS 2911 (Part 1/Sec 4)`,
+   "or equivalent", tender unit codes such as `MT`, `SQM` and `RM`, and the leading serial number of
+   a schedule row. Table header rows are dropped outright: searching
+   `Sl Description of item Unit Qty` returned a pesticide standard, because SL is a formulation code
+   in BIS titles.
+6. **Citation extraction** handling `IS 1786`, `IS 1786:2008`, `IS:456-2000`, `IS 2911 (Part 1/Sec 4)`,
    `IS 8329 Part 1` and `IS/ISO 9001:2015`, normalised to `is_base_id` form.
 
 Citations are then **removed from the query text**. They are resolved exactly against the lookup
@@ -480,6 +496,11 @@ bound and a regression guard, not as field accuracy.
 Coverage spans construction, electrical, water, mechanical, chemicals, food, textiles, medical,
 metals, safety, furniture and consumer goods.
 
+One item is in there as a **documented failure rather than a target**: RCC pipes NP3 600 mm, gold
+`IS 458`. The tender says "reinforced cement concrete" and the title reads "Precast Concrete Pipes
+(with and without Reinforcement)", so the query and the document share almost no words. It sits in
+the set to keep that gap visible. Tuning retrieval to rescue one item would be fitting to the test.
+
 Replacing this file with real tender lines is the highest-value next task in this workstream. It
 doubles as the strongest vocabulary source available: the words around "conforming to IS xxxx" in a
 real tender are the procurement officer's own phrasing for that standard.
@@ -565,6 +586,21 @@ covered by `tests/test_pipeline.py`.
 | Grade code survived the word cap | "TMT reinforcement bars Fe 500D" kept the grade because trimming ran before the five-word cap | cap first, then trim trailing specifiers |
 | Consumed key reported as unparsed | the `Product` key named the product and was also listed under `unmapped` | product keys are consumed, not reported as unmapped |
 | Disabled boost still counted in the ceiling | adding the requirement boost depressed every score even when it was switched off, quietly invalidating the fitted tier thresholds | the ceiling counts only boosts that are active |
+
+### Found by running a real tender PDF
+
+The seven below came from one run of `03_search.py --file test_tender.pdf`. All are on the query
+side or in document reading; none touched retrieval, fusion, boosts or the index.
+
+| Bug | Symptom | Fix |
+|---|---|---|
+| Wrapped PDF lines split into separate items | "…for the water" and "distribution network." became two searches describing nothing, roughly eight junk items in one document | lines are rejoined before any splitting when the first has no terminal punctuation and the second starts lowercase |
+| Citation numbers read as quantities | "conforming to IS 269" reported a weight of 269 tonnes, and IS 2062 reported 2062 tonnes | requirements are extracted from citation-stripped text, plus a guard refusing any number directly after an IS marker |
+| Leading work verb became the product | three tender lines reported `product: Providing` | an explicit leading gerund phrase is stripped, matched only at the start of the line |
+| Every table row processed twice | the whole schedule of quantities appeared, and was searched, twice | one extraction path per page: `extract_text` only, which already returns table rows intact |
+| "G.I." destroyed by unit matching | the row index and the G of "G.I." parsed as three grams, leaving the item to search on "I. pipes" | a unit match is refused when the letter is followed by a dot and another letter |
+| Table scaffolding entered the query | `MT 120`, `SQM 900`, row indices and the header row `Sl Description of item Unit Qty` were all searched; the header returned a pesticide standard, because SL is a formulation code | unit codes and leading row indices are stripped, and an all-generic-label row is detected as a header |
+| Section headings survived | `SECTION B — SANITARY AND WATER SUPPLY ITEMS` is seven words and beat the six-word all-caps cap | the cap rose to ten words and `SECTION`/`ANNEXURE`/`SCHEDULE` labels are headings at any length; a capitalised line carrying a digit stays an item |
 
 Two are worth remembering. The boilerplate bug silently corrupted real product words in every query
 and was invisible until the output was read line by line. The score-ceiling bug is subtler: it broke

@@ -27,11 +27,13 @@ def read_document(path: Path) -> str:
 
 
 def read_pdf(path: Path) -> str:
-    """Extract text page by page, keeping table rows as rows.
+    """Extract text page by page.
 
-    Tables are pulled separately and joined with pipes because the line splitter
-    already treats a pipe as a cell separator inside one row, which is exactly
-    how a tender's schedule of materials is laid out.
+    One extraction path per page, deliberately. Running `extract_text` and
+    `extract_tables` together fed the same schedule of quantities into the
+    splitter twice, so every table row was searched, ranked and reported twice.
+    `extract_text` already returns table rows intact, one row per line, which is
+    what the line splitter wants.
     """
     try:
         import pdfplumber
@@ -45,16 +47,7 @@ def read_pdf(path: Path) -> str:
     with pdfplumber.open(str(path)) as pdf:
         page_count = len(pdf.pages)
         for page in pdf.pages:
-            parts: list[str] = []
-            text = page.extract_text() or ""
-            if text.strip():
-                parts.append(text)
-            for table in page.extract_tables() or []:
-                for row in table:
-                    cells = [str(cell).strip() for cell in row if cell and str(cell).strip()]
-                    if len(cells) > 1:
-                        parts.append(" | ".join(cells))
-            page_text = "\n".join(parts)
+            page_text = page.extract_text() or ""
             total_chars += len(page_text.strip())
             pages.append(page_text)
 

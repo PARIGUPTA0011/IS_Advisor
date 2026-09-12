@@ -49,9 +49,13 @@ _QUANTITY_RE = re.compile(
     rf"(?:(?P<qualifier>{_QUALIFIER_PATTERN})\s+(?:[a-z]+\s+){{0,2}})?"
     rf"(?P<value>{_NUMBER})"
     rf"(?:\s*(?:-|to|and)\s*(?P<value2>{_NUMBER}))?"
-    rf"\s*(?P<unit>{_UNIT_PATTERN})\b",
+    rf"\s*(?P<unit>{_UNIT_PATTERN})\b(?!\s*\.\s*[A-Za-z])",
     re.IGNORECASE,
 )
+
+# A number that sits right after an IS marker is a standard number, not a
+# measurement. Without this, "conforming to IS 269" reported 269 tonnes.
+_CITATION_LEAD_RE = re.compile(r"\bIS\s*[:/]?\s*$", re.IGNORECASE)
 
 # "DN 150", "NB 25", "M 12" put the unit first.
 _PREFIX_UNIT_RE = re.compile(
@@ -126,6 +130,26 @@ _REPHRASE = [
 _LEAD_VERBS = re.compile(
     r"^\s*(?:procure(?:ment)?|supply(?:ing)?|provide|provision|purchase|install(?:ation)?|"
     r"furnish|deliver(?:y)?|erect(?:ion)?|of|for)\b[\s:of]*",
+    re.IGNORECASE,
+)
+
+# Indian public-works tenders open with a gerund phrase: "Providing and fixing
+# white vitreous china water closet pan". The head-phrase heuristic takes the
+# span before the first comma, which made the product "Providing". Matched only
+# at the start of the line, never mid-phrase, for the same reason materials are
+# only stripped where they lead.
+# Spelled out rather than stemmed. A stem like `paint\w*` or `fix\w*` would eat
+# "Paint, synthetic enamel" and "Fixtures and fittings", which are products.
+_WORK_VERB = (
+    r"(?:providing|provision|supplying|supply|laying|fixing|fitting|installing|"
+    r"installation|erecting|erection|constructing|construction|dismantling|"
+    r"testing|commissioning|stacking|transporting|carriage|conveying|"
+    r"lowering|jointing|refixing|relaying)"
+)
+_GERUND_PREFIX_RE = re.compile(
+    rf"^\s*{_WORK_VERB}(?:\s*[,&]\s*|\s+and\s+|\s+)?"
+    rf"(?:{_WORK_VERB}(?:\s*[,&]\s*|\s+and\s+|\s+)?){{0,3}}"
+    rf"(?:of\s+|the\s+)*",
     re.IGNORECASE,
 )
 
@@ -209,6 +233,8 @@ def extract_quantities(text: str) -> list[Quantity]:
         if unit is None:
             continue
         raw = match.group(0).strip()
+        if _CITATION_LEAD_RE.search(text[: match.start("value")]):
+            continue                    # "IS 269" is a citation, not 269 tonnes
         # A bare "m" or "a" next to a count word is almost always a false hit.
         if _COUNT_WORDS.search(text[max(0, match.start() - 12): match.end() + 12]) and unit in {"m", "A"}:
             continue
@@ -281,6 +307,7 @@ def extract_product(text: str, nlp=None, drop: list[str] | None = None) -> str |
     working = _COUNT_PHRASE_RE.sub(" ", working)
     working = re.sub(r"\b\d+(?:[.,]\d+)*\b", " ", working)
     working = re.sub(r"\s+", " ", working).strip(" ,.-:;/")
+    working = _GERUND_PREFIX_RE.sub("", working)
     working = _LEAD_VERBS.sub("", working)
     if not working:
         return None

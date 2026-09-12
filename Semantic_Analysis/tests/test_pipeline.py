@@ -233,6 +233,107 @@ def test_pdf_reading() -> None:
         pass
 
 
+def test_wrapped_pdf_lines_are_rejoined() -> None:
+    """Fix 1: a hard-wrapped sentence is one line item, not two fragments."""
+    document = (
+        "d) Supply of centrifugally cast ductile iron pressure pipes DN 300, for the water\n"
+        "distribution network.\n"
+        "e) Supply and laying of reinforced cement concrete pipes NP3 class.\n"
+    )
+    items = query.parse_document(document)
+    check("wrapped sentence rejoined", len(items), 2)
+    check("no dangling fragment", any("distribution network" in i.text for i in items), True)
+
+    # A new item below an unfinished line must not be swallowed by it.
+    kept = query.rejoin_wrapped_lines("Supply of pumps and\n1. Cement bags\nb) Steel bars")
+    check("numbered item not swallowed", kept.count("\n"), 2)
+    # Nor may a heading absorb the line under it.
+    heading = query.rejoin_wrapped_lines("SECTION B\nProviding and fixing taps")
+    check("heading not joined", heading.count("\n"), 1)
+
+
+def test_citations_do_not_become_quantities() -> None:
+    """Fix 2: "conforming to IS 269" was reported as 269 tonnes."""
+    for text in ("Ordinary portland cement conforming to IS 269 MT 120",
+                 "Structural steel conforming to IS 2062 MT 18"):
+        result = requirements.extract(query.strip_citations(text))
+        values = [q.value for q in result.quantities]
+        check(f"no citation quantity in {text[:28]!r}", [v for v in values if v in (269.0, 2062.0)], [])
+    # The guard holds even if a citation survives the stripper.
+    direct = requirements.extract_quantities("conforming to IS 269 MT")
+    check("IS-prefixed number refused", [q.value for q in direct], [])
+
+
+def test_gerund_prefix_stripped() -> None:
+    """Fix 3: Indian public-works lines open with a verb phrase."""
+    cases = {
+        "Providing and fixing white vitreous china water closet pan, squatting pattern":
+            "water closet",
+        "Providing, fixing and testing of GI pipes 25 mm nominal bore": "pipe",
+        "Supply and laying of reinforced cement concrete pipes NP3 class": "pipe",
+    }
+    for text, expected_tail in cases.items():
+        product = requirements.extract(text).product or ""
+        check(f"product not the verb for {text[:26]!r}", product.lower().startswith("provid"), False)
+        check(f"product ends in {expected_tail!r}", product.lower().endswith(expected_tail), True)
+
+    # A product that merely looks like a work verb must survive.
+    check("paint survives", requirements.extract("Paint, synthetic enamel, 20 litre").product, "Paint")
+    check("fixtures survive", requirements.extract("Fixtures and fittings for toilets").product, "Fixture")
+
+
+def test_pdf_is_read_once() -> None:
+    """Fix 4: running text and table extraction together duplicated every row."""
+    fixtures = Path(__file__).resolve().parent / "fixtures"
+    tender = fixtures / "tender.pdf"
+    if not tender.exists():
+        FAILURES.append("fixtures missing - run tests/make_fixtures.py")
+        return
+    items = query.parse_document(documents.read_document(tender))
+    texts = [i.text for i in items]
+    check("no duplicated line items", len(texts), len(set(texts)))
+
+
+def test_abbreviations_are_not_units() -> None:
+    """Fix 5: the row index and the G of "G.I." parsed as three grams."""
+    cleaned = query.strip_boilerplate("3 G.I. pipes 25 mm nominal bore, medium class")
+    check("G.I. survives", "G.I" in cleaned, True)
+    quantities = requirements.extract_quantities("3 G.I. pipes 25 mm bore")
+    check("no gram quantity", [q for q in quantities if q.unit == "g"], [])
+    check("the real size survives", [(q.value, q.unit) for q in quantities], [(25.0, "mm")])
+
+
+def test_table_scaffolding_removed() -> None:
+    """Fix 6: unit codes, row indices and header rows are not products."""
+    cleaned = query.strip_boilerplate("1 Ordinary portland cement 43 grade in bags MT 120")
+    for gone in ("MT", "120"):
+        check(f"{gone!r} stripped", gone in cleaned, False)
+    check("leading row index stripped", cleaned.strip().startswith("Ordinary"), True)
+    check("header row detected", query.is_table_header("Sl Description of item Unit Qty"), True)
+    check("real item is not a header", query.is_table_header("Ordinary portland cement"), False)
+    check("header dropped from parse", query.parse_document("Sl Description of item Unit Qty"), [])
+
+
+def test_section_headings_dropped() -> None:
+    """Fix 7: seven-word section labels beat the old six-word cap."""
+    for heading in ("SECTION B - SANITARY AND WATER SUPPLY ITEMS",
+                    "SECTION A - SCHEDULE OF QUANTITIES",
+                    "Annexure II - list of approved makes",
+                    "NOTICE INVITING TENDER"):
+        check(f"{heading[:26]!r} is a heading", query.is_heading(heading, []), True)
+    # An all-caps line carrying a measurement is an item, not a heading.
+    check("capitalised item kept", query.is_heading("GI PIPES 25 MM MEDIUM CLASS", []), False)
+
+
+def test_source_encoding_damage_normalised() -> None:
+    """The scrape left a three-character mojibake sequence in 845 titles."""
+    damaged = "Hot Rolled Steel Sections for Shipbuilding ï¿½ Dimensions"
+    cleaned = corpus.clean_text(damaged)
+    check("mojibake removed", "ï¿½" in cleaned, False)
+    check("words survive", cleaned, "Hot Rolled Steel Sections for Shipbuilding Dimensions")
+    check("lowercase IS prefix fixed", corpus.load_standards()["is_number"].str.match(r"^Is\b").sum(), 0)
+
+
 def main() -> int:
     for name, func in sorted(globals().items()):
         if name.startswith("test_") and callable(func):
