@@ -1,0 +1,26 @@
+# Hand-added properties. Never overwritten by 05_mine_gazetteers.py.
+#
+# Procurement shorthand and finishes that BIS titles express differently or not
+# at all, so mining the corpus cannot supply them.
+fr
+frls
+flame retardant low smoke
+powder coated
+epoxy coated
+hot dip galvanised
+hot dip galvanized
+uv stabilised
+uv stabilized
+uv resistant
+rust proof
+anti corrosive
+anticorrosive
+acid resistant
+alkali resistant
+termite proof
+borer proof
+food safe
+lead free
+non magnetic
+self lubricating
+pre laminated

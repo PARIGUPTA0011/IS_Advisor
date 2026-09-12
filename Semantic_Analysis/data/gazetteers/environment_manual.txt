@@ -1,0 +1,24 @@
+# Hand-added environments. Never overwritten by 05_mine_gazetteers.py.
+#
+# How a tender describes where a product will sit. BIS titles rarely say, which
+# is exactly why environment coverage over the corpus is so low.
+outdoor use
+indoor use
+open to sky
+roof mounted
+roof top
+pole mounted
+wall mounted
+floor mounted
+ceiling mounted
+surface mounted
+flush mounted
+pad mounted
+trench laid
+direct buried
+corrosive atmosphere
+high altitude
+high humidity
+coastal area
+water logged
+dusty

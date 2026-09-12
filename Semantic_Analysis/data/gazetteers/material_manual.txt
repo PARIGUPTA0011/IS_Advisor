@@ -1,0 +1,38 @@
+# Hand-added materials. Never overwritten by 05_mine_gazetteers.py.
+#
+# These are procurement shorthand. A tender writes "GI pipes" and "SS 304 sink";
+# BIS titles spell both out, so mining the corpus can never produce them. Same
+# reasoning as data/aliases.csv, applied to materials rather than to standards.
+#
+# Keep this list short and unambiguous. Every entry is matched as a whole word
+# against the line item, so an abbreviation that is also a common word does not
+# belong here.
+ms
+mild steel
+ss
+ss 304
+ss 316
+ss304
+ss316
+gi
+gi sheet
+ci
+di
+ductile iron
+crca
+ppgi
+hdpe
+pvc u
+upvc
+cpvc
+frp
+grp
+grc
+msrp
+rcc
+pcc
+mdf
+hdf
+wpc
+pu
+pvc coated
