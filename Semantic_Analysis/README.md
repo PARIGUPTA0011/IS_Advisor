@@ -393,13 +393,23 @@ any of these numbers.**
 
 | Configuration | Recall@1 | Recall@5 | Recall@10 | MRR | sec/query |
 |---|---|---|---|---|---|
-| keyword only | 0.800 | **0.917** | **0.958** | 0.856 | 0.06 |
-| dense only | 0.650 | 0.833 | 0.875 | 0.726 | 0.05 |
-| hybrid, shipping default | 0.725 | 0.883 | 0.942 | 0.794 | 0.10 |
-| keyword + reranker | 0.625 | 0.833 | 0.908 | 0.725 | 0.62 |
-| dense + reranker | 0.617 | 0.817 | 0.883 | 0.707 | 0.59 |
-| hybrid + reranker | 0.625 | 0.825 | 0.875 | 0.714 | 0.64 |
+| keyword only | 0.793 | **0.909** | **0.950** | 0.849 | 0.10 |
+| dense only | 0.645 | 0.826 | 0.868 | 0.720 | 0.11 |
+| hybrid, shipping default | 0.719 | 0.876 | 0.934 | 0.787 | 0.17 |
+| keyword + reranker | 0.620 | 0.826 | 0.901 | 0.719 | 2.60 |
+| dense + reranker | 0.612 | 0.810 | 0.876 | 0.702 | 2.59 |
+| hybrid + reranker | 0.620 | 0.818 | 0.868 | 0.708 | 2.63 |
 | hybrid + requirement boost *(built, measured, removed)* | 0.717 | 0.883 | 0.942 | 0.784 | 0.13 |
+
+Every row but the last was re-measured together on the 121-item set. The requirement-boost row cannot
+be re-run, because the code it measures was deleted; it is left here at its original 120-item figures
+as the record of why it was deleted, and should be compared against the 120-item hybrid numbers it
+was measured beside (0.725 / 0.883 / 0.942 / 0.794), not against the row above it.
+
+The `sec/query` column is machine-dependent and was re-measured on a slower CPU than the rest of this
+file was written on, so read the column as ratios rather than absolutes. The reranker's cost relative
+to the retrieval it re-sorts is the part that travels: roughly 15x the shipping default, and 25x
+keyword-only.
 
 ### Vocabulary sources (`04_ablate_vocabulary.py`, keyword retrieval)
 
@@ -428,7 +438,7 @@ evaluation set simply does not name as the single right answer.
 ### What these say
 
 **The cross-encoder makes retrieval worse, so it is off by default.** It costs Recall@5 in every
-pairing and roughly six times the latency. The obvious explanation is that it scores the embedded
+pairing, and between fifteen and twenty-five times the latency. The obvious explanation is that it scores the embedded
 text, which deliberately excludes the trade names and mined wording the keyword index matched on, so
 it re-sorts using less information than the retriever that produced the list. That was tested
 directly and it is not the cause: rescoring on a prose-formatted document instead of the
@@ -450,8 +460,9 @@ python 03_search.py "Cast iron sluice valve DN 150 for water works" --rerank
 
 **The requirement-match boost was built, measured, and deleted.** A small lift when a requested
 material or property appeared in a candidate's indexed text was the obvious way to turn extracted
-requirements into ranking signal. It left Recall@5 at 0.883 and Recall@10 at 0.942, both identical
-to plain hybrid retrieval, and cost Recall@1 (0.725 to 0.717) and MRR (0.794 to 0.784). So the code
+requirements into ranking signal. Measured on the 120-item set, it left Recall@5 at 0.883 and
+Recall@10 at 0.942, both identical to the plain hybrid retrieval it was measured against, and cost
+Recall@1 (0.725 to 0.717) and MRR (0.794 to 0.784). So the code
 is gone rather than kept as an unmeasured feature. The reason is the coverage table above: 85% of
 indexed titles name no material at all, so for most candidates the boost has nothing to fire on, and
 where it does fire it mostly rewards standards the retriever had already ranked. Requirements are
@@ -469,7 +480,7 @@ title cleaning is what shrank it, as described in section 3.
 **Curated trade names look like the largest single win, and that number is partly circular.** The
 same person wrote `data/aliases.csv` and the evaluation items, so items phrased "GI pipes" or "paver
 block" are matched by aliases written with those words in mind. The direction is real, because trade
-names genuinely appear in no BIS text, but +0.109 Recall@5 overstates what unseen tenders will give.
+names genuinely appear in no BIS text, but +0.115 Recall@5 overstates what unseen tenders will give.
 
 **Dense retrieval loses to keyword retrieval here, and that is not a reason to drop it.** The
 evaluation items were written by someone reading BIS titles, so lexical overlap with those titles is
@@ -666,7 +677,7 @@ first comma or preposition beats a parser's first noun chunk on this input shape
 | `is_advisor/rerank.py` | cross-encoder |
 | `is_advisor/search.py` | fusion, boosts, citation resolution, output contract |
 | `data/aliases.csv` | 57 curated trade-name rows, all verified against the index |
-| `data/eval_set.jsonl` | 120 evaluation line items, all gold answers verified |
+| `data/eval_set.jsonl` | 121 evaluation line items, all gold answers verified |
 | `data/gazetteers/` | generated attribute vocabularies, plus hand-maintained `*_manual.txt` |
 | `data/sample_tender.txt` | demo tender exercising splitting, citations and a withdrawn standard |
 | `tests/test_pipeline.py` | rule-based logic, index-selection traps, and every bug in section 10 |
@@ -705,6 +716,7 @@ machine they were written on.
 | `02_evaluate.py`, `04_ablate_vocabulary.py`, `06_calibrate_tiers.py` | all three re-run; section 7 carries their output |
 | `06_calibrate_tiers.py` | re-fitted to the same 0.96 and 0.84 already in `config.py`, so no threshold drift |
 | JSON contract on the PDF fixture | every field in section 9 present, three records, one per line item |
+| The `--rerank` example in section 7 | reproduces to three decimal places, 0.912 / 0.906 / 0.858, on a rebuilt index |
 
 The fixture run is the end-to-end check worth repeating, because it exercises PDF reading, heading
 removal, citation extraction, requirement extraction and ranking in one command:
