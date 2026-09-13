@@ -516,6 +516,28 @@ try next.
 Note that the miss list printed by `02_evaluate.py --ablate` comes from the last configuration in
 the table, not the default. Run it without `--ablate` for the default configuration's misses.
 
+### What the test-tender fixes did to these numbers
+
+The seven query-side fixes in section 10 moved the headline from 0.883 to 0.876 Recall@5, and none
+of that movement came from the fixes. It is entirely the IS 458 item added as a known miss. On the
+original 120 items the default configuration hits the same 106 at rank 5 and the same 87 at rank 1,
+before and after. That is expected: the fixes target PDF wrapping, table scaffolding and document
+headings, and the hand-written evaluation lines contain none of those.
+
+Three things the test-tender run showed that the evaluation set cannot:
+
+- **IS 8329 ranks first at 0.990 on the tender, but is still a miss in the evaluation set.** The
+  tender writes "centrifugally cast ductile iron pressure pipes", which is the title's own wording.
+  The evaluation item writes "DI pipes with socket and spigot ends" and still falls below rank 5. The
+  tender result is a phrasing match, not a fix, so the miss above stands.
+- **Paving blocks regressed from first to fifth.** Stripping `SQM 900` from the query was correct,
+  but that unit code had been accidentally telling the embedding "paved area". Keyword retrieval
+  still ranks IS 15658 first; dense retrieval dropped it from 5th to 18th, and fusion lands it 5th.
+  It is left untuned rather than rescued by putting scaffolding back into the query.
+- **Armoured XLPE cable returned IS 7098 Part 1, not IS 1554, and that is correct.** IS 1554 covers
+  PVC-insulated cable; IS 7098 covers XLPE. The answer key was wrong, not the system. Neither
+  evaluation item gold-labelled IS 1554 names XLPE, so no gold needed changing.
+
 ---
 
 ## 8. Evaluation set: read this before quoting the number

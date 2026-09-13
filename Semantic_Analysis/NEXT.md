@@ -23,8 +23,10 @@ model download. Metadata is a boost, never a filter.
 | 4 Ranking | done — fusion, boosts, 0–1 score, relevance tiers (item 3) |
 | Requirement-match ranking signal | **built, measured, removed** — item 5 |
 
-Items 1 to 4 do not touch retrieval, and the headline numbers confirm it: the shipping configuration
-still measures Recall@5 = 0.883 and Recall@10 = 0.942, unchanged.
+Items 1 to 4 did not touch retrieval, and the numbers confirmed it at the time: the shipping
+configuration measured Recall@5 = 0.883 and Recall@10 = 0.942 on 120 items, unchanged. The current
+figures are 0.876 and 0.934 on 121 items; the drop is the IS 458 known miss added later, and the
+original 120 items still hit identically. README section 7 has the detail.
 
 ---
 
@@ -99,9 +101,10 @@ calibration was re-confirmed after item 5 was removed.
 
 ## Item 4 — PDF input (done)
 
-`03_search.py --file x.pdf` extracts text with `pdfplumber`, page by page, pulling table rows out
-separately and joining cells with pipes so the existing row rules apply. `.txt` behaviour is
-unchanged.
+`03_search.py --file x.pdf` extracts text with `pdfplumber`, page by page, using `extract_text`
+alone. An earlier version also ran `extract_tables` and fed both into the splitter, which searched
+every schedule row twice; `extract_text` already returns table rows intact, one per line. Wrapped
+prose lines are rejoined before splitting. `.txt` behaviour is unchanged.
 
 A PDF yielding fewer than 40 characters per page is reported as a scan rather than searched as an
 empty string. Optical character recognition remains out of scope.
