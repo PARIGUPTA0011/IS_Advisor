@@ -5,3 +5,4 @@ Semantic_Analysis/artifacts/
 __pycache__/
 *.pyc
 CLAUDE.md
+*.log
