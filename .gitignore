@@ -1,3 +1,7 @@
 .env
+.venv/
+# derived retrieval artifacts - rebuild with Semantic_Analysis/01_build_index.py
+Semantic_Analysis/artifacts/
 __pycache__/
 *.pyc
+CLAUDE.md
