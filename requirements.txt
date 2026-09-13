@@ -3,17 +3,38 @@ pandas==2.3.3
 python-dotenv==1.2.3
 
 # Semantic_Analysis: local retrieval stack, no API keys, CPU only
-sentence-transformers==6.0.1
-torch==2.14.0
-transformers==5.17.0
-faiss-cpu==1.15.0
+#
+# These versions are verified working together on Windows/CPU/Python 3.11 (see
+# Semantic_Analysis/README.md section 1, "If the pinned versions will not import").
+# A newer transformers/sentence-transformers/torch combo may work too, but on a
+# machine with any pre-existing TensorFlow/Keras install, `transformers` will also
+# need TF disabled at runtime regardless of version - see the note below.
+#
+# Install the CPU-only torch build FIRST, from PyTorch's own index (the plain
+# PyPI package can pull in a much larger CUDA build):
+#   pip install torch==2.1.2 --index-url https://download.pytorch.org/whl/cpu
+# Then install the rest of this file as usual.
+sentence-transformers==3.0.1
+torch==2.1.2
+transformers==4.44.2
+huggingface-hub==0.25.2
+tokenizers==0.19.1
+faiss-cpu==1.11.0
 rank-bm25==0.2.2
 spacy==3.8.16
 pyarrow==25.0.1
-numpy==2.5.3
+numpy==1.26.1
 scikit-learn==1.9.1
 pdfplumber==0.11.10
 # spaCy model: python -m spacy download en_core_web_sm
+#
+# If `transformers` crashes on import with
+# "AttributeError: module 'inspect' has no attribute 'ArgSpec'", it means an
+# old TensorFlow/Keras install on this machine is being picked up by
+# transformers' optional TF integration. Fix: set USE_TF=0 in the environment
+# before running anything that imports sentence_transformers/transformers
+# (e.g. `$env:USE_TF="0"` in PowerShell, or `export USE_TF=0` in bash) - this
+# forces the PyTorch-only code path, which is all this project uses anyway.
 
 fastapi
 uvicorn
