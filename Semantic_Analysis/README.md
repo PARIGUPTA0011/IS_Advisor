@@ -22,8 +22,8 @@ the one that was built, measured and deleted, and what is still open.
 pip install -r ../requirements.txt
 python -m spacy download en_core_web_sm          # optional, improves phrase extraction
 
-python 01_build_index.py                         # ~8 min on CPU, embeddings dominate
-python 01_build_index.py --no-dense              # ~4 s, corpus + keyword index only
+python 01_build_index.py                         # 8-25 min on CPU, embeddings dominate
+python 01_build_index.py --no-dense              # ~8 s, corpus + keyword index only
 python 05_mine_gazetteers.py --report            # attribute vocabulary, ~5 s
 
 python 03_search.py "TMT bars Fe500D for RCC work"
@@ -38,6 +38,24 @@ python tests/test_pipeline.py
 ```
 
 Use `--no-dense` on the build while iterating on text cleaning; it skips the only slow step.
+
+### If the pinned versions will not import
+
+The pins in `../requirements.txt` are not portable to every CPU machine. On Windows with an Anaconda
+Python 3.11, `torch==2.14.0` fails at import with `OSError: [WinError 1114] ... c10.dll`, and
+dropping to an older `torch` then breaks `transformers==5.17.0` with `NameError: name 'nn' is not
+defined`. Both are import-time failures inside the dependency, not in this package. A verified
+working combination on that machine:
+
+```bash
+pip install torch==2.1.2 --index-url https://download.pytorch.org/whl/cpu
+pip install transformers==4.44.2 sentence-transformers==3.0.1 "huggingface-hub<0.26" "tokenizers<0.20"
+pip install pdfplumber rank-bm25 faiss-cpu
+```
+
+Retrieval results are unaffected by this choice; only the embedding build time is, by roughly 3x
+(section 6). Keyword-only work needs no more than `pdfplumber` and `rank-bm25`, which is the quickest
+way to get `--no-dense` running without several hundred megabytes of `torch`.
 
 ### Search flags
 
@@ -317,7 +335,12 @@ number for years. That is what `successor_parts` does.
 | Vector search | `faiss-cpu`, numpy fallback | 23,341 × 384 floats is ~35 MB, so exhaustive search is viable either way |
 
 Embedding 23,341 documents took **468.8 seconds** on CPU across 365 batches. That is the only slow
-step in the build; everything else finishes in about four seconds.
+step in the build; everything else finishes in four to eight seconds.
+
+The embedding step is the one figure that moves a lot with the machine and the `torch` build. A
+second CPU machine running the fallback pins in section 1 took **1,518.7 seconds** for the same 365
+batches, roughly 3x slower, and produced a byte-identical index shape of 23,341 x 384. Treat 468.8 s
+as a floor rather than an expectation, and budget up to half an hour on an unknown CPU.
 
 The bi-encoder gets the `bge` retrieval prefix on queries only, never on documents.
 
@@ -363,7 +386,7 @@ All knobs live in `is_advisor/config.py`:
 
 ## 7. Measured results
 
-120 evaluation line items, no query containing its own IS number. **Read section 8 before quoting
+121 evaluation line items, no query containing its own IS number. **Read section 8 before quoting
 any of these numbers.**
 
 ### Retrievers (`02_evaluate.py --ablate`)
@@ -382,10 +405,10 @@ any of these numbers.**
 
 | Corpus | Recall@1 | Recall@5 | Recall@10 |
 |---|---|---|---|
-| title + classification only | 0.692 | 0.808 | 0.875 |
-| + past-edition vocabulary | 0.700 | 0.808 | 0.875 |
-| + curated trade names | 0.800 | **0.917** | **0.958** |
-| both, shipping default | 0.800 | 0.917 | 0.958 |
+| title + classification only | 0.686 | 0.802 | 0.868 |
+| + past-edition vocabulary | 0.694 | 0.802 | 0.868 |
+| + curated trade names | 0.793 | **0.917** | **0.950** |
+| both, shipping default | 0.793 | 0.909 | 0.950 |
 
 ### Relevance tiers (`06_calibrate_tiers.py`)
 
@@ -394,11 +417,11 @@ Fitted values: `Highly relevant` at 0.96 and above, `Related` from 0.84.
 
 | Tier | Share of gold answers landing there |
 |---|---|
-| Highly relevant | 64.0% |
-| Related | 30.7% |
+| Highly relevant | 64.9% |
+| Related | 29.8% |
 | Possibly relevant | 5.3% |
 
-2.9% of non-gold candidates reach the top tier. That is an upper bound on the false-positive rate
+2.8% of non-gold candidates reach the top tier. That is an upper bound on the false-positive rate
 rather than a measurement of it, because many of those are genuinely applicable standards that the
 evaluation set simply does not name as the single right answer.
 
@@ -435,10 +458,13 @@ where it does fire it mostly rewards standards the retriever had already ranked.
 still extracted and reported; they simply do not move the ranking. This is the second honest
 negative in this section, and the second time the measurement contradicted the plan.
 
-**Past-edition vocabulary earns almost nothing.** It is the plan's highest-rated offline source, and
-it moves Recall@1 by 0.008 and Recall@5 not at all. It is nearly free, so it stays on, but it should
-not be presented as a significant contributor. Proper title cleaning is what shrank it, as described
-in section 3.
+**Past-edition vocabulary earns almost nothing, and may cost slightly more than it earns.** It is the
+plan's highest-rated offline source, and on its own it moves Recall@1 by 0.008 and Recall@5 not at
+all. Added on top of the trade names it is no longer free: Recall@5 drops from 0.917 to 0.909, one
+item, because the extra wording lengthens documents that BM25 then penalises — the same length effect
+described under "what still misses" below. It stays on because one item is inside the noise of a
+121-item set, but the honest reading is now "no measured benefit" rather than "small benefit". Proper
+title cleaning is what shrank it, as described in section 3.
 
 **Curated trade names look like the largest single win, and that number is partly circular.** The
 same person wrote `data/aliases.csv` and the evaluation items, so items phrased "GI pipes" or "paver
@@ -454,8 +480,8 @@ keyword-only for anyone who disagrees.
 
 ### What still misses
 
-14 of 120 items miss at rank 5 under the shipping default. Two patterns account for nearly all of
-them.
+15 of 121 items miss at rank 5 under the shipping default. Two patterns account for nearly all of
+them, and the fifteenth is the IS 458 item section 8 describes as a deliberate failure.
 
 **Multi-part standards where the query names the family, not the part.** IS 1367 threaded fasteners,
 IS 2556 sanitary appliances, IS 10124 PVC fittings, IS 13730 winding wires, IS 1554 armoured cable,
@@ -483,7 +509,7 @@ the table, not the default. Run it without `--ablate` for the default configurat
 
 ## 8. Evaluation set: read this before quoting the number
 
-`data/eval_set.jsonl` holds 120 procurement line items, each with a verified gold standard. Every
+`data/eval_set.jsonl` holds 121 procurement line items, each with a verified gold standard. Every
 gold `is_base_id` resolves against the built index, ids are unique, and no query contains its own IS
 number.
 
@@ -500,6 +526,11 @@ One item is in there as a **documented failure rather than a target**: RCC pipes
 `IS 458`. The tender says "reinforced cement concrete" and the title reads "Precast Concrete Pipes
 (with and without Reinforcement)", so the query and the document share almost no words. It sits in
 the set to keep that gap visible. Tuning retrieval to rescue one item would be fitting to the test.
+
+That item is id 121, and it was added after the first measurement pass. Every figure in section 7 has
+since been re-measured with it included, which is why the retrieval numbers there are a little lower
+than an earlier draft of this file quoted: the hit counts did not change, the denominator did. It
+misses at rank 10 as intended, so it costs roughly 0.008 on each recall figure by arithmetic alone.
 
 Replacing this file with real tender lines is the highest-value next task in this workstream. It
 doubles as the strongest vocabulary source available: the words around "conforming to IS xxxx" in a
@@ -658,6 +689,41 @@ What was actually run, so the claims above can be checked rather than taken on t
 | Gazetteer counts | 139 + 25 material, 35 + 22 property, 18 + 20 environment (mined + manual), matching section 4 |
 | Embedding fingerprint | matches the corpus, so no search silently fell back to keyword-only |
 | Index size | 23,341 documents, one row per base id, current and canonical only |
+| `tests/fixtures/tender.pdf` end to end | three line items, each gold standard at rank 1 under the shipping default |
+
+### Clean-machine rebuild
+
+The whole workstream was rebuilt from nothing on a second CPU machine, with no `artifacts/` directory
+and none of the retrieval dependencies installed, to check that the numbers above survive leaving the
+machine they were written on.
+
+| Step | Result |
+|---|---|
+| `01_build_index.py --no-dense` | 8.0 s, 23,341 indexed documents and 35,524 lookup rows, both matching section 3 |
+| `01_build_index.py` | 1,518.7 s, `embeddings.npy` at 23,341 x 384, `backend=faiss` |
+| `tests/test_pipeline.py` | passes, run once keyword-only and again with the dense stack present |
+| `02_evaluate.py`, `04_ablate_vocabulary.py`, `06_calibrate_tiers.py` | all three re-run; section 7 carries their output |
+| `06_calibrate_tiers.py` | re-fitted to the same 0.96 and 0.84 already in `config.py`, so no threshold drift |
+| JSON contract on the PDF fixture | every field in section 9 present, three records, one per line item |
+
+The fixture run is the end-to-end check worth repeating, because it exercises PDF reading, heading
+removal, citation extraction, requirement extraction and ranking in one command:
+
+```
+python 03_search.py --file tests/fixtures/tender.pdf
+
+  TMT reinforcement bars Fe 500D grade conforming to IS 1786
+    1. 1.000  IS 1786:2008    High Strength Deformed Steel Bars and Wires  (cited)
+  Ordinary Portland Cement 43 grade in 50 kg bags
+    1. 0.996  IS 269:2015     Ordinary portland cement - Specification
+  Cast iron sluice valve DN 150 for the pumping main
+    1. 0.955  IS 14846:2000   Sluice valve for water works purposes
+```
+
+The third line is the one that justifies shipping hybrid retrieval against the measurement, as
+section 7 argues. Keyword-only ranks `IS 13349`, *cast iron sluice **gates***, above the sluice valve
+on this line; the dense retriever is what puts `IS 14846` first. It is a single line item rather than
+a measurement, but it is the failure mode the evaluation set is too lexical to show.
 
 Two properties are asserted by tests rather than by inspection, because they are the ones that would
 fail silently: that the index never holds a stale edition when a newer current one exists, and that
