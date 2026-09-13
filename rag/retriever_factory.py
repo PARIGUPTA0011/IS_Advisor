@@ -20,9 +20,7 @@ from rag.retriever_interface import Retriever
 
 
 def get_retriever(metadata_store: MetadataStore) -> Retriever:
-    # TODO(retrieval teammate): replace this with your real retriever, e.g.:
-    #     from your_module import SemanticRetriever
-    #     return SemanticRetriever(...)
-    from rag.mock_retriever import MockRetriever
+    del metadata_store  # The semantic index owns its persisted corpus.
+    from rag.semantic_retriever import SemanticRetriever
 
-    return MockRetriever(metadata_store)
+    return SemanticRetriever()

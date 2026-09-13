@@ -8,10 +8,10 @@ Usage:
 import sys
 
 from rag.metadata_store import MetadataStore
-from rag.mock_retriever import MockRetriever
 from rag.kg_client import Neo4jKGClient
 from rag.llm_client import get_llm_client
 from rag.pipeline import run_query
+from rag.retriever_factory import get_retriever
 
 
 def main() -> None:
@@ -22,7 +22,7 @@ def main() -> None:
     query = sys.argv[1]
 
     store = MetadataStore()
-    retriever = MockRetriever(store)
+    retriever = get_retriever(store)
     kg = Neo4jKGClient.from_env()
     llm = get_llm_client()
 
