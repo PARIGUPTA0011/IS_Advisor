@@ -15,6 +15,7 @@ from rag.kg_client import KGClient
 from rag.llm_client import LLMClient
 from rag.metadata_store import MetadataStore
 from rag.prompt_builder import build_prompt
+from rag.query_translator import needs_translation, translate_to_english
 from rag.response_parser import RecommendationResponse, parse_response
 from rag.retriever_interface import Retriever, RetrievedEvidence, validate_retrieved_evidence
 from rag.schemas import Evidence
@@ -85,9 +86,19 @@ def run_query(
     falling back on its own parametric knowledge instead of admitting
     insufficient evidence. This is a deliberate short circuit, not a
     missing feature.
+
+    `language`, when it names a source language the retriever's English-only
+    index can't search directly (currently just Hindi), also triggers a
+    translate-then-retrieve step: the index itself is never touched, only the
+    query used to search it. `query` (the caller's original text) is still
+    what's echoed back as the response's `query` field. Grounding rules never
+    change - only the words used for retrieval/context and the language of
+    the LLM's own generated text (via build_prompt) are affected.
     """
 
-    retrieved = retriever.retrieve(query, top_k=top_k)
+    retrieval_query = translate_to_english(query, llm_client) if needs_translation(language) else query
+
+    retrieved = retriever.retrieve(retrieval_query, top_k=top_k)
     validate_retrieved_evidence(retrieved)
 
     if not retrieved:
@@ -103,7 +114,7 @@ def run_query(
     evidence = hydrate(retrieved, metadata_store)
     evidence = expand_with_kg(evidence, kg_client)
 
-    bundle = build_context(query, evidence)
+    bundle = build_context(retrieval_query, evidence)
     system_prompt, user_message = build_prompt(bundle, metadata_store, language=language)
     raw_output = llm_client.generate(system_prompt, user_message, json_mode=True)
     response = parse_response(query, raw_output)
