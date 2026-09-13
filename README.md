@@ -22,6 +22,7 @@ Grounding Validation
             ↓
 Explainable IS Recommendations
 
+```
 Tech Stack
 
 Frontend: React, TypeScript, Vite
