@@ -1,0 +1,97 @@
+{
+  "app": {
+    "name": "IS-Advisor",
+    "tagline": "Make every specification defensible with standards intelligence."
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "analyze": "Analyze Tender",
+    "settings": "Settings"
+  },
+  "dashboard": {
+    "heading": "What are you procuring today?",
+    "subheading": "Describe a product, paste a requirement, or upload a tender to discover applicable Indian Standards.",
+    "placeholder": "e.g. 90W LED street lights for outdoor municipal roads",
+    "analyze": "Analyze",
+    "tryExample": "Try an example",
+    "examples": {
+      "led": "90W LED street lights",
+      "pump": "Centrifugal water pumps"
+    },
+    "uploadTitle": "Drop a tender here",
+    "uploadSubtitle": "PDF or TXT, up to 25MB",
+    "backendOffline": "The IS-Advisor backend isn't reachable right now. Start it and refresh.",
+    "checking": "Checking backend..."
+  },
+  "analyze": {
+    "modeText": "Describe Procurement Requirement",
+    "modeUpload": "Upload Tender",
+    "charCount": "{{count}} characters",
+    "clear": "Clear",
+    "analyzeButton": "Analyze",
+    "language": "Response language",
+    "removeFile": "Remove",
+    "extracting": "Extracting text from document...",
+    "steps": {
+      "uploading": "Uploading document",
+      "extracting": "Extracting requirements",
+      "understanding": "Understanding specifications",
+      "searching": "Searching Indian Standards",
+      "building": "Building recommendations",
+      "evidence": "Generating evidence",
+      "done": "Analysis complete"
+    }
+  },
+  "results": {
+    "title": "Analysis Results",
+    "confidence": "Confidence",
+    "recommendations": "Recommended Standards",
+    "relatedStandards": "Related Standards",
+    "warnings": "Warnings",
+    "evidenceRetrieved": "Retrieved Evidence",
+    "whyThisApplies": "Why this applies",
+    "noRecommendations": "No standards could be confidently recommended for this query.",
+    "insufficientEvidence": "Not enough evidence was found to make a recommendation. Try rephrasing with more specific technical detail.",
+    "status": {
+      "current": "Current",
+      "withdrawn": "Withdrawn"
+    },
+    "tier": {
+      "Highly relevant": "Highly relevant",
+      "Related": "Related",
+      "Possibly relevant": "Possibly relevant"
+    },
+    "score": "Match score",
+    "newAnalysis": "New analysis"
+  },
+  "settings": {
+    "title": "Settings",
+    "appearance": "Appearance",
+    "light": "Light",
+    "dark": "Dark",
+    "system": "System",
+    "language": "Language",
+    "preferences": "Analysis preferences",
+    "topK": "Number of recommendations",
+    "about": "About IS-Advisor",
+    "aboutBody": "IS-Advisor recommends applicable Indian Standards for procurement specifications using hybrid semantic search, a knowledge graph of standard relationships, and an LLM grounded strictly in retrieved evidence.",
+    "systemStatus": "System status",
+    "backendOnline": "Backend online",
+    "backendOffline": "Backend offline",
+    "standardsLoaded": "{{count}} standards loaded"
+  },
+  "confidence": {
+    "high": "High confidence",
+    "medium": "Medium confidence",
+    "low": "Low confidence",
+    "insufficient_evidence": "Insufficient evidence",
+    "parse_error": "Could not parse response",
+    "unknown": "Unknown"
+  },
+  "errors": {
+    "generic": "Something went wrong. Please try again.",
+    "fileTooLarge": "File exceeds the 25MB limit.",
+    "unsupportedFile": "Only PDF and TXT files are supported.",
+    "emptyQuery": "Please describe what you're procuring first."
+  }
+}
