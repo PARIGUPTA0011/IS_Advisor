@@ -1,7 +1,11 @@
 .env
 .venv/
-# derived retrieval artifacts - rebuild with Semantic_Analysis/01_build_index.py
-Semantic_Analysis/artifacts/
+# Semantic_Analysis/artifacts/ is intentionally committed (not gitignored) so
+# clones don't need to run 01_build_index.py (up to 25 min) before working -
+# important for SIH demo reliability. Re-run the build and recommit if
+# IS_Standards_Data/standards.csv changes; the loader detects a stale
+# fingerprint and falls back to keyword-only rather than erroring, so a
+# missed recommit degrades quietly instead of breaking.
 __pycache__/
 *.pyc
 CLAUDE.md
