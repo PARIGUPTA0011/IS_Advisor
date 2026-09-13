@@ -60,3 +60,5 @@ class Evidence:
     matched_text: Optional[str]
     record: Optional[StandardRecord]      # None if kys_id wasn't found in the metadata store
     kg_relations: list[RelatedStandard] = field(default_factory=list)
+    why: Optional[str] = None             # Retriever's own explanation, if it provides one (e.g. SemanticRetriever)
+    tier: Optional[str] = None            # Retriever's own relevance band, if it provides one

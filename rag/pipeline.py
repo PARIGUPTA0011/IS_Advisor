@@ -41,6 +41,8 @@ def hydrate(
                 score=item["score"],
                 matched_text=item.get("matched_text"),
                 record=record,
+                why=item.get("why"),
+                tier=item.get("tier"),
             )
         )
     return evidence

@@ -108,7 +108,7 @@ class Retriever(Protocol):
     def retrieve(self, query: str, top_k: int = 10) -> list[RetrievedEvidence]: ...
 ```
 
-`rag/semantic_retriever.py` adapts `Semantic_Analysis`'s `Candidate` objects into this shape — only `kys_id` (int) and `score` (float) cross the boundary. `Semantic_Analysis`'s much richer output (`why`, `tier`, `requirements`, `cited_standards` — see its README section 9) is deliberately not used here, since the RAG layer re-derives everything else it needs from `standards.jsonl` by `kys_id`. This is what kept the two workstreams independently buildable: neither had to know the other's internals, only this one shared join key.
+`rag/semantic_retriever.py` adapts `Semantic_Analysis`'s `Candidate` objects into this shape. Only `kys_id` (int) and `score` (float) are required to cross the boundary — that's the one hard coupling point, and it's what kept the two workstreams independently buildable. Two more fields ride along as optional, presentation-only passengers: `why` (the retriever's own match explanation, e.g. `"matched: led, street; semantically similar title; product specification"`) and `tier` (`"Highly relevant"` / `"Related"` / `"Possibly relevant"`) — both flow untouched through `Evidence` (`schemas.py`) and out through `/recommend`'s `evidence` array, for a frontend "why this applies" card. Nothing else from `Semantic_Analysis`'s richer output (`requirements`, `cited_standards` — see its README section 9) crosses this boundary; the RAG layer re-derives everything else it needs from `standards.jsonl` by `kys_id` instead.
 
 ### Before/after: what the integration actually changed
 

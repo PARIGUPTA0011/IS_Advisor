@@ -49,4 +49,6 @@ class SemanticRetriever:
             score=float(candidate.score),
             matched_text=candidate.title,
             is_number=candidate.is_number,
+            why=candidate.why,
+            tier=candidate.tier or None,
         )

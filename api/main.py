@@ -61,10 +61,25 @@ class RelatedStandardOut(BaseModel):
     reason: str | None = None
 
 
+class EvidenceOut(BaseModel):
+    """Raw retrieval evidence, independent of what the LLM said about it -
+    what a "why this applies" card shows. `tag` matches a recommendation's
+    `evidence_tag` (e.g. both "[1]") so the frontend can link the two."""
+
+    tag: str
+    standard_id: str
+    title: str | None = None
+    status: str | None = None
+    score: float
+    why: str | None = None     # retriever's own match explanation, e.g. "matched: led, street, lighting"
+    tier: str | None = None    # retriever's own relevance band, e.g. "Highly relevant"
+
+
 class RecommendResponse(BaseModel):
     query: str
     recommendations: list[RecommendationOut]
     related_standards: list[RelatedStandardOut]
+    evidence: list[EvidenceOut]
     warnings: list[str]
     confidence: str
 
@@ -93,6 +108,18 @@ def recommend(req: RecommendRequest) -> RecommendResponse:
                 standard_id=r.standard_id, relationship=r.relationship, related_to=r.related_to, reason=r.reason
             )
             for r in response.related_standards
+        ],
+        evidence=[
+            EvidenceOut(
+                tag=f"[{i + 1}]",
+                standard_id=e.record.is_number if e.record else f"<unknown kys_id={e.kys_id}>",
+                title=e.record.title if e.record else None,
+                status=e.record.status if e.record else None,
+                score=e.score,
+                why=e.why,
+                tier=e.tier,
+            )
+            for i, e in enumerate(result.evidence)
         ],
         warnings=response.warnings,
         confidence=response.confidence,

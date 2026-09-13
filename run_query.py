@@ -51,7 +51,9 @@ def main() -> None:
     for e in result.evidence:
         title = e.record.title if e.record else "?"
         is_number = e.record.is_number if e.record else "?"
-        print(f"  kys_id={e.kys_id} score={e.score:.4f} {is_number}  {title[:70]}")
+        print(f"  kys_id={e.kys_id} score={e.score:.4f} tier={e.tier}  {is_number}  {title[:70]}")
+        if e.why:
+            print(f"    why: {e.why}")
 
 
 if __name__ == "__main__":
