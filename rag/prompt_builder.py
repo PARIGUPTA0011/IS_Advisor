@@ -26,7 +26,24 @@ STRICT GROUNDING RULES:
 """ + RESPONSE_FORMAT_INSTRUCTIONS
 
 
-def build_prompt(bundle: ContextBundle, metadata_store: MetadataStore) -> tuple[str, str]:
+def build_prompt(
+    bundle: ContextBundle,
+    metadata_store: MetadataStore,
+    language: str | None = None,
+) -> tuple[str, str]:
     """Returns (system_prompt, user_message). user_message is the full
-    context text - it already includes the user query at the top."""
-    return SYSTEM_PROMPT, bundle.to_prompt_text(metadata_store)
+    context text - it already includes the user query at the top.
+
+    `language` only affects the language of the LLM's own generated text
+    (titles/reasons/warnings) - it never changes what evidence is grounded on,
+    since IS numbers and KG relationship types are language-independent
+    tokens either way.
+    """
+    system_prompt = SYSTEM_PROMPT
+    if language and language.lower() not in ("en", "english"):
+        system_prompt += (
+            f"\n\nRespond in {language}: write every `reason`, `warnings` entry, and other "
+            "free-text field in that language. Do not translate standard_id, relationship, "
+            "or confidence values - those stay exactly as they appear in the evidence."
+        )
+    return system_prompt, bundle.to_prompt_text(metadata_store)

@@ -75,6 +75,7 @@ def run_query(
     kg_client: KGClient,
     llm_client: LLMClient,
     top_k: int = 10,
+    language: str | None = None,
 ) -> PipelineResult:
     """End-to-end orchestration: Retriever -> hydrate -> KG expand ->
     context -> prompt -> LLM -> parse -> validate.
@@ -103,7 +104,7 @@ def run_query(
     evidence = expand_with_kg(evidence, kg_client)
 
     bundle = build_context(query, evidence)
-    system_prompt, user_message = build_prompt(bundle, metadata_store)
+    system_prompt, user_message = build_prompt(bundle, metadata_store, language=language)
     raw_output = llm_client.generate(system_prompt, user_message, json_mode=True)
     response = parse_response(query, raw_output)
 
