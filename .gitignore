@@ -1,7 +1,67 @@
+# --- secrets -----------------------------------------------------------------
+# .env holds the Neo4j password and the LLM API key. It has never been
+# committed on this repo (verified against the full history) - keep it that way.
+# .env.example is the template and MUST stay tracked, hence the negation: the
+# `.env.*` line above it would otherwise swallow it.
 .env
+.env.*
+!.env.example
+*.pem
+*.key
+*credentials*.json
+service-account*.json
+
+# --- virtual environments ----------------------------------------------------
 .venv/
-# derived retrieval artifacts - rebuild with Semantic_Analysis/01_build_index.py
-Semantic_Analysis/artifacts/
+venv/
+env/
+ENV/
+
+# --- python ------------------------------------------------------------------
 __pycache__/
-*.pyc
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+build/
+dist/
+
+# --- derived retrieval artifacts ---------------------------------------------
+# Rebuild with Semantic_Analysis/01_build_index.py (~28 min, or ~8 s with
+# --no-dense). None of this belongs in git: embeddings.npy alone is 35 MB, and
+# it is a pure function of standards.csv plus the encoder named in
+# index_meta.json.
+Semantic_Analysis/artifacts/
+
+# The same file types wherever else they land - a stray index built outside
+# artifacts/ is still 35 MB of derived data.
+*.npy
+*.pkl
+*.parquet
+*.faiss
+
+# --- model caches ------------------------------------------------------------
+# Only bites if HF_HOME or TRANSFORMERS_CACHE is pointed inside the repo. The
+# checkpoints are gigabytes: NLLB-200 is 2.5 GB, multilingual-e5-small 0.5 GB.
+.cache/
+models--*/
+*.safetensors
+*.gguf
+
+# --- editors and operating systems -------------------------------------------
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- logs and scratch --------------------------------------------------------
+*.log
+scratch/
+tmp/
+
+# --- local agent instructions ------------------------------------------------
 CLAUDE.md

@@ -13,6 +13,13 @@ another language.
 
 import sys
 
+# Before the model stack is imported, so its import-time warnings are caught.
+# See quiet_warnings.py for what is hidden and why; IS_ADVISOR_ALL_WARNINGS=1
+# brings it all back.
+import quiet_warnings
+
+quiet_warnings.apply()
+
 # A Windows console is cp1252 and cannot encode Indic scripts, so printing a
 # localised answer would raise UnicodeEncodeError instead of answering.
 for _stream in (sys.stdout, sys.stderr):
@@ -47,6 +54,13 @@ def main() -> None:
     kg = Neo4jKGClient.from_env()
     llm = get_llm_client()
 
+    # One sentence, once, instead of a notification block per missing label and
+    # property on every query. The driver's own notifications are turned off in
+    # kg_client.py; set NEO4J_NOTIFICATIONS=1 to see them again.
+    warning = kg.empty_graph_warning()
+    if warning:
+        print(f"! {warning}\n", file=sys.stderr)
+
     try:
         result = run_query(query, retriever, store, kg, llm, top_k=5, language=language)
     finally:
@@ -73,8 +87,15 @@ def main() -> None:
     print()
     print("RELATED STANDARDS:")
     for r in result.response.related_standards:
-        print(f"  - {r.standard_id} --{r.relationship}--> {r.related_to}")
+        marker = " [WITHDRAWN]" if (r.status or "").lower() == "withdrawn" else ""
+        print(f"  - {r.standard_id} --{r.relationship}--> {r.related_to}{marker}")
+        if r.title:
+            print(f"    covers: {r.title}")
         print(f"    reason: {r.reason_localized or r.reason}")
+    print()
+    if result.response.unsupported_spec_terms:
+        print("SPEC VALUES NOT CONFIRMED BY EVIDENCE:",
+              ", ".join(result.response.unsupported_spec_terms))
     print()
     print("WARNINGS:", result.response.warnings_localized or result.response.warnings)
     print()

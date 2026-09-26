@@ -179,8 +179,8 @@ appearing to validate everything.
 
 **IndicTrans2 is gated.** Both checkpoints are `gated=auto` on HuggingFace (confirmed against their
 API), so they need an account, the terms accepted, and `HF_TOKEN`. They stay wired and preferred -
-they are the better models for these languages, and the only ones carrying Bodo, Dogri, Santali and
-Manipuri - but the shipping default is `facebook/nllb-200-distilled-600M`. `GET /health` reports
+they are the better models for these languages, and the only ones carrying Bodo, Dogri, Konkani and
+Santali - but the shipping default is `facebook/nllb-200-distilled-600M`. `GET /health` reports
 which backend actually loaded.
 
 **No measured retrieval quality in any language but English.** See the first item below.

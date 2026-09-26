@@ -19,9 +19,17 @@ detected from the query unless the request names it:
 GET /languages lists what is supported and how translation is currently wired.
 """
 
+import sys
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import FastAPI
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+import quiet_warnings  # noqa: E402
+
+quiet_warnings.apply()
+
+from fastapi import FastAPI  # noqa: E402
 from pydantic import BaseModel
 
 from rag.kg_client import Neo4jKGClient
@@ -43,6 +51,11 @@ async def lifespan(app: FastAPI):
     app_state["retriever"] = get_retriever(store)
     app_state["kg"] = Neo4jKGClient.from_env()
     app_state["llm"] = get_llm_client()
+    # Logged once at startup rather than as Neo4j notifications on every
+    # request. An empty graph is a deployment problem, not a per-query one.
+    warning = app_state["kg"].empty_graph_warning()
+    if warning:
+        print(f"! {warning}")
     yield
     app_state["kg"].close()
 
@@ -75,6 +88,8 @@ class RelatedStandardOut(BaseModel):
     related_to: str
     reason: str | None = None
     reason_localized: str | None = None
+    title: str | None = None       # what this standard covers, from the dataset
+    status: str | None = None      # "current" | "withdrawn"
 
 
 class RecommendResponse(BaseModel):
@@ -88,6 +103,7 @@ class RecommendResponse(BaseModel):
     query_english: str | None = None             # what retrieval and the LLM saw
     language: dict | None = None                 # which language, and how it was decided
     warnings_localized: list[str] = []
+    unsupported_spec_terms: list[str] = []
     detection: dict | None = None
     translation: dict | None = None
 
@@ -119,6 +135,7 @@ def recommend(req: RecommendRequest) -> RecommendResponse:
                 standard_id=r.standard_id, relationship=r.relationship,
                 related_to=r.related_to, reason=r.reason,
                 reason_localized=r.reason_localized,
+                title=r.title, status=r.status,
             )
             for r in response.related_standards
         ],
@@ -127,6 +144,7 @@ def recommend(req: RecommendRequest) -> RecommendResponse:
         query_english=response.query_english,
         language=response.language,
         warnings_localized=response.warnings_localized,
+        unsupported_spec_terms=response.unsupported_spec_terms,
         detection=result.detection,
         translation=result.translation,
     )
@@ -142,9 +160,17 @@ def health() -> dict:
     # that silently differs between machines: the IndicTrans2 checkpoints are
     # gated on HuggingFace, so a deployment without a token falls back to NLLB
     # and should be able to see that it did.
+    kg = app_state.get("kg")
+    graph: dict = {"available": False}
+    if kg is not None:
+        try:
+            graph = {"available": True, **kg.describe_graph()}
+        except Exception as error:
+            graph = {"available": False, "error": f"{type(error).__name__}: {error}"}
     return {
         "status": "ok",
         "standards_loaded": len(store) if store else 0,
+        "graph": graph,
         "translation": get_translator().status(),
     }
 

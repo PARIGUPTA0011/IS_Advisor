@@ -7,7 +7,8 @@ one it got:
   Constitution, plus English. These have a script, a known IndicTrans2 code,
   detection rules in `detect.py`, and localised field labels in `localize.py`.
   IndicTrans2 is the strongest open model for these, and it is the only one
-  that covers Bodo, Dogri, Santali and Manipuri at all.
+  that covers Bodo, Dogri, Konkani and Santali at all (verified by probing the
+  installed NLLB tokenizer, not read off a model card).
 * **Best effort** - anything else the installed NLLB checkpoint happens to
   support. Detection for these is weaker (see `detect.py`), nothing is
   hand-curated, and every response says so via the language's `tier`.

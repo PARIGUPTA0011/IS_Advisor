@@ -25,6 +25,11 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+import quiet_warnings  # noqa: E402
+
+quiet_warnings.apply()
 
 # A Windows console defaults to cp1252, which cannot encode Devanagari, Tamil
 # or Arabic script: printing a localised answer there raises

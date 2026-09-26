@@ -21,6 +21,8 @@ from dataclasses import dataclass, field
 from rag.context_builder import build_context
 from rag.grounding_validator import ValidationResult, validate
 from rag.kg_client import KGClient
+from rag.kg_editions import prune_superseded_editions
+from rag.spec_coverage import coverage_warning, unsupported_terms
 from rag.llm_client import LLMClient
 from rag.metadata_store import MetadataStore
 from rag.prompt_builder import build_prompt
@@ -55,14 +57,27 @@ def hydrate(
     return evidence
 
 
-def expand_with_kg(evidence: list[Evidence], kg_client: KGClient) -> list[Evidence]:
+def expand_with_kg(
+    evidence: list[Evidence],
+    kg_client: KGClient,
+    metadata_store: MetadataStore | None = None,
+) -> list[Evidence]:
     """For each piece of retrieved evidence, look up its KG neighbors
     (REFERENCES / REFERENCED_BY / REPLACED_BY / REPLACES) and attach them.
-    Evidence is frozen, so this returns new instances rather than mutating."""
+    Evidence is frozen, so this returns new instances rather than mutating.
+
+    With a `metadata_store`, each neighbour set is reduced to one edition per
+    standard - the current, latest one, by the same rule the retrieval index
+    uses - and every surviving relation is annotated with its status. Without a
+    store the raw graph edges come back unchanged, which is what the checkpoint
+    tests assert against.
+    """
 
     expanded: list[Evidence] = []
     for e in evidence:
         relations = kg_client.get_relationships(e.kys_id)
+        if metadata_store is not None:
+            relations = prune_superseded_editions(relations, metadata_store)
         expanded.append(dataclasses.replace(e, kg_relations=relations))
     return expanded
 
@@ -77,6 +92,25 @@ class PipelineResult:
     # what language was detected and how.
     detection: dict | None = None
     translation: dict | None = None
+
+
+def _attach_related_facts(
+    response: RecommendationResponse, metadata_store: MetadataStore
+) -> RecommendationResponse:
+    """Put the dataset's own title and status on each related standard.
+
+    Deterministic, and independent of what the model wrote: the model supplies
+    the relationship and its reasoning, the store supplies what the standard is
+    and whether it is still current. A withdrawn edition that reads like a live
+    recommendation is the failure this prevents.
+    """
+    for related in response.related_standards:
+        record = metadata_store.get_by_is_number(related.standard_id)
+        if record is None:
+            continue
+        related.title = record.title or None
+        related.status = record.status or None
+    return response
 
 
 def localise_response(response: RecommendationResponse, target: str | None) -> RecommendationResponse:
@@ -162,7 +196,7 @@ def run_query(
         )
 
     evidence = hydrate(retrieved, metadata_store)
-    evidence = expand_with_kg(evidence, kg_client)
+    evidence = expand_with_kg(evidence, kg_client, metadata_store)
 
     # The English query goes into the context, not the original: the evidence
     # block and the prompt's grounding rules are English, and a model asked to
@@ -175,6 +209,7 @@ def run_query(
     response.query_english = english_query if english_query != query else None
 
     validation = validate(response, evidence)
+    _attach_related_facts(response, metadata_store)
     # Grounding is enforced here, not just measured: anything the validator
     # rejected is dropped from the response returned to the caller.
     response.direct_recommendations = validation.accepted_recommendations
@@ -184,6 +219,16 @@ def run_query(
             f"{len(validation.rejected_recommendations) + len(validation.rejected_related)} "
             "unsupported claim(s) from the model were rejected by the grounding validator."
         ]
+
+    # Computed, not requested. The prompt asks the model to flag values the
+    # evidence cannot confirm (rule 9) and it did so on one run and not the next
+    # for the same query - so the check is done here, where the answer is the
+    # same every time. Added before localisation so the warning is translated
+    # along with the rest.
+    response.unsupported_spec_terms = unsupported_terms(english_query, evidence)
+    spec_warning = coverage_warning(english_query, evidence)
+    if spec_warning:
+        response.warnings = list(response.warnings) + [spec_warning]
 
     # Localisation is the last step, after the validator has had its say on
     # English text. See the module docstring.

@@ -2,6 +2,19 @@ neo4j==6.3.0
 pandas==2.3.3
 python-dotenv==1.2.3
 
+# rag/llm_client.py speaks the OpenAI chat-completions API for the "groq",
+# "ollama" and "openai_compatible" providers - one SDK covers Groq, Ollama,
+# llama.cpp, vLLM, LM Studio and OpenRouter. The `together` and `anthropic`
+# providers need their own SDKs instead (`pip install together` /
+# `pip install anthropic`); neither is pinned here, because the free providers
+# are the default path and neither SDK is needed to use them.
+openai==3.19.2
+
+# api/main.py. Documented in rag/README.md as `uvicorn api.main:app` but never
+# pinned, so a fresh install could run run_query.py and not the API.
+fastapi==0.141.1
+uvicorn==0.51.0
+
 # Semantic_Analysis: local retrieval stack, no API keys, CPU only
 sentence-transformers==6.0.1
 torch==2.14.0

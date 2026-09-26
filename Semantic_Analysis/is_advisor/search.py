@@ -523,7 +523,17 @@ def load_retriever(
 
                 dense = DenseIndex.load()
                 encoder = load_encoder()
-            except Exception:
+            except Exception as error:
+                # Said out loud rather than swallowed. This fallback is a real
+                # quality change - keyword-only retrieval, and no cross-lingual
+                # path at all - and the usual cause is an environment where
+                # torch will not import (README section 1), which is invisible
+                # from the results alone.
+                print(
+                    f"! dense retrieval unavailable ({type(error).__name__}: {error}); "
+                    "falling back to keyword-only",
+                    file=sys.stderr,
+                )
                 dense = encoder = None
     if with_reranker:
         try:

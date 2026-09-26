@@ -1075,7 +1075,7 @@ checkpoint load.
 
 **IndicTrans2 is gated** (`gated=auto` on both checkpoints, confirmed against the HuggingFace API),
 so using it needs an account, the terms accepted, and `HF_TOKEN` in the environment. It is the
-better model for these languages and the only one that carries Bodo, Dogri, Santali and Manipuri at
+better model for these languages and the only one that carries Bodo, Dogri, Konkani and Santali at
 all, which is why it stays wired and preferred rather than being dropped for something ungated.
 Without a token the layer runs on NLLB and says so in the RAG API's `GET /health`.
 

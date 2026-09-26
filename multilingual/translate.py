@@ -4,7 +4,9 @@ Two engines, chosen per language rather than per request:
 
 * **IndicTrans2** (`ai4bharat/indictrans2-*-dist-200M`) for the 22 scheduled
   languages. It is the strongest open model for them, and for Bodo, Dogri,
-  Santali and Manipuri it is the only option - NLLB-200 does not carry them.
+  Konkani and Santali it is the only option - the installed NLLB-200 tokenizer
+  carries no code for those four (probed, not assumed; Manipuri as `mni_Beng`
+  *is* carried, which an earlier version of this note got wrong).
 * **NLLB-200 distilled** for everything else, and as the fallback if the
   IndicTrans2 checkpoints are not present.
 
@@ -338,7 +340,13 @@ class Translator:
         last_note = "no translation backend is available"
         for backend in self._backends_for(source, target):
             if backend is self._nllb and not backend.supports(source, target):
-                last_note = f"{config.NLLB_MODEL} does not carry {source} -> {target}"
+                # backend.reason carries the real cause when the checkpoint
+                # could not be loaded at all - a broken torch install, say.
+                # Reporting "does not carry hin_Deva -> eng_Latn" for a DLL
+                # failure sends the reader after the wrong problem.
+                last_note = backend.reason or (
+                    f"{config.NLLB_MODEL} does not carry {source} -> {target}"
+                )
                 continue
             try:
                 result = backend.translate([text], source, target)[0]
@@ -525,7 +533,13 @@ class Translator:
         last_note = "no translation backend is available"
         for backend in self._backends_for(source, target):
             if backend is self._nllb and not backend.supports(source, target):
-                last_note = f"{config.NLLB_MODEL} does not carry {source} -> {target}"
+                # backend.reason carries the real cause when the checkpoint
+                # could not be loaded at all - a broken torch install, say.
+                # Reporting "does not carry hin_Deva -> eng_Latn" for a DLL
+                # failure sends the reader after the wrong problem.
+                last_note = backend.reason or (
+                    f"{config.NLLB_MODEL} does not carry {source} -> {target}"
+                )
                 continue
             try:
                 outputs: list[str] = []

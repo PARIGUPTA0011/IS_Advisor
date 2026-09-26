@@ -155,7 +155,7 @@ digits far more reliably than they keep an invented placeholder.
 
 | Engine | Covers | State |
 |---|---|---|
-| `ai4bharat/indictrans2-*-dist-200M` | the 22 scheduled languages, including Bodo, Dogri, Santali and Manipuri, which NLLB-200 does not carry | wired and preferred — **gated on HuggingFace** |
+| `ai4bharat/indictrans2-*-dist-200M` | the 22 scheduled languages, including Bodo, Dogri, Konkani and Santali, the four the installed NLLB-200 does not carry | wired and preferred — **gated on HuggingFace** |
 | `facebook/nllb-200-distilled-600M` | ~200 languages, including most of the scheduled ones | the working default, ungated, ~2.5 GB |
 
 **IndicTrans2 is gated** (`gated=auto` on both checkpoints, confirmed against the
