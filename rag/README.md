@@ -4,7 +4,7 @@
 
 Given a free-text procurement spec (e.g. *"LED street lights, 90W, 230V AC, outdoor use, IP66"*), this pipeline retrieves candidate Indian Standards, expands them with their Knowledge Graph relationships (references, replacements), hands all of it to an LLM as strict grounding context, and returns a structured recommendation — every claim traceable back to real evidence, with anything the LLM can't support automatically stripped out before it reaches the caller.
 
-It is exposed as a FastAPI endpoint (`POST /recommend`) and is working end-to-end, including real semantic search: `rag/retriever_factory.py` now returns `SemanticRetriever`, the adapter over the hybrid BM25 + dense retriever in `Semantic_Analysis/`. `MockRetriever` is still in the tree as the fallback the pipeline was built against, and it is no longer what runs. See [Semantic search, as connected](#semantic-search-as-connected).
+It is exposed as a FastAPI endpoint (`POST /recommend`, plus `POST /recommend/document` for an uploaded PDF or text file) and is working end-to-end against **real semantic search** — `rag/retriever_factory.py` now wires in `SemanticRetriever` (`rag/semantic_retriever.py`), a hybrid BM25 + dense retriever built in `Semantic_Analysis/` (see that folder's own README for the full retrieval design, evaluation numbers and known limits). `mock_retriever.py` still exists but is no longer what runs. See [How the two workstreams connect](#how-the-two-workstreams-connect-retriever_interfacepy).
 
 A query may arrive in any of the 22 scheduled Indian languages and the recommendation comes back in that language, with every IS number and official title left in English. See [Multilingual queries](#multilingual-queries) — and note the ordering there, because it is what keeps the grounding validator meaningful.
 
@@ -19,7 +19,7 @@ query (any supported language)
 multilingual.prepare_query()               detect language → translate to English → glossary hints
   │  English query text from here on
   ▼
-Retriever.retrieve(query, top_k)          ← SEMANTIC SEARCH (SemanticRetriever over Semantic_Analysis/)
+Retriever.retrieve(query, top_k)          ← SEMANTIC SEARCH — SemanticRetriever, hybrid BM25 + dense (Semantic_Analysis/)
   │  list[{kys_id, score, ...}]
   ▼
 hydrate()                                  rag/pipeline.py + rag/metadata_store.py
@@ -60,8 +60,9 @@ All of this is orchestrated by **`rag/pipeline.py::run_query()`**, which is the 
 | File | Responsibility |
 |---|---|
 | `retriever_interface.py` | The contract between semantic search and everything else. Defines `RetrievedEvidence` (only `kys_id: int` and `score: float` are required) and the `Retriever` protocol. **Nothing downstream depends on how retrieval works — only on this shape.** |
-| `retriever_factory.py` | **The single swap point.** One function, `get_retriever()`, currently returns `MockRetriever`. This is the only file the semantic-search teammate needs to edit. |
-| `mock_retriever.py` | Placeholder retriever: naive keyword/token-overlap scoring over standard titles. Explicitly *not* semantic search — it exists only so the rest of the pipeline could be built and tested before real retrieval existed. |
+| `retriever_factory.py` | **The single swap point.** `get_retriever()` now returns `SemanticRetriever`. This was the only file the semantic-search teammate needed to edit to plug in the real retriever. |
+| `semantic_retriever.py` | Adapter from the `Semantic_Analysis/` hybrid retriever to the RAG `Retriever` protocol — converts its `Candidate` objects into `RetrievedEvidence` (`kys_id` + `score`), nothing more. |
+| `mock_retriever.py` | Superseded, kept for reference/tests. Naive keyword/token-overlap scoring over standard titles — this is what stood in for semantic search before `SemanticRetriever` landed. |
 | `schemas.py` | Core dataclasses: `StandardRecord` (hydrated metadata), `RelatedStandard` (one KG neighbor), `Evidence` (retrieval result + metadata + KG relations, combined). Field names match exactly what exists in `standards.jsonl`/`standards.csv` — nothing invented. |
 | `metadata_store.py` | Loads all 35,524 records from `IS_Standards_Data/standards.jsonl` into memory once, keyed by `kys_id` (and `is_number`). This is what turns a bare `(kys_id, score)` into a full `StandardRecord`. |
 | `kg_client.py` | `Neo4jKGClient` — queries the existing Neo4j graph (built by `Knowlege_Graph/02-06`, schema in `Knowlege_Graph/KG.md`) for `REFERENCES`/`REFERENCED_BY`/`REPLACED_BY`/`REPLACES` edges of a given `kys_id`. One Cypher query per lookup, using scoped `CALL` subqueries to avoid a cartesian blow-up on standards with many edges. |
@@ -95,31 +96,42 @@ All of this is orchestrated by **`rag/pipeline.py::run_query()`**, which is the 
 | `llm_client.py` | ✅ Real — Groq or Ollama (both free), any OpenAI-compatible endpoint, Together AI, or Anthropic. Provider selection and the request path are covered by `tests/test_llm_providers.py`, which runs with no key and no network |
 | `response_parser.py`, `grounding_validator.py` | ✅ Real, tested including deliberately hallucinated/malformed inputs |
 | `api/main.py` (FastAPI) | ✅ Real, tested via live HTTP calls |
-| `semantic_retriever.py` | ✅ Real — hybrid BM25 + dense retrieval over the 23,341-document index built by `Semantic_Analysis/01_build_index.py`. This is what `get_retriever()` returns. |
+| `semantic_retriever.py` / `Semantic_Analysis/` | ✅ Real — hybrid BM25 + dense retrieval, evaluated on a 121-item set (see `Semantic_Analysis/README.md` for full numbers and design). This is what `get_retriever()` returns. |
 | `multilingual/` (shared) | ✅ Real — detection and localisation are covered by `tests/test_multilingual.py`, which runs without the translation checkpoints. The better translation model is gated; see [Multilingual queries](#multilingual-queries). |
-| `mock_retriever.py` | Superseded. Kept as the fallback the pipeline was built against, and as the thing the checkpoint tests can run without an index. Not what runs. |
+| `mock_retriever.py` | Superseded — kept as the fallback the pipeline was built against, and as the thing the checkpoint tests can run without an index. Not what runs. |
 
-Everything has been exercised against **live infrastructure** (a real, populated Neo4j Aura database and a real LLM API), not mocked or simulated.
+Everything has been exercised against **live infrastructure** (a real, populated Neo4j Aura database and a real LLM API) or a real, measured retrieval evaluation — not mocked or simulated.
+
+### The search index is committed, not built per machine
+
+`Semantic_Analysis/artifacts/` (corpus, BM25 index, embeddings — about 55 MB) is **committed on purpose**, so a fresh clone can run immediately instead of waiting up to 25 minutes for `01_build_index.py`. That is a deliberate trade for demo reliability, and `.gitignore` carries the reasoning next to the negation that keeps those files trackable.
+
+What that buys you: nothing to build after a clone. What it costs: the index has to be **rebuilt and recommitted** when either input changes —
+
+```
+cd Semantic_Analysis
+python 01_build_index.py              # full build with dense embeddings: 8-25 min on CPU
+python 01_build_index.py --no-dense   # keyword-only (BM25) build: ~8 seconds
+```
+
+— and those inputs are `IS_Standards_Data/standards.csv` and the `BI_ENCODER` named in `is_advisor/config.py`. Forget to recommit and it fails *quietly rather than loudly*: `load_retriever()` compares the stored text fingerprint **and** the encoder name in `index_meta.json`, warns on stderr, and drops to keyword-only rather than silently comparing a query vector against vectors from a different model. That guard is what caught an English index being merged in under a multilingual config.
+
+If `torch`/`transformers` fail to import, see `Semantic_Analysis/README.md` section 1 ("If the pinned versions will not import") — a known Windows/CPU version conflict with a verified workaround, and the reason `requirements.txt` pins the older stack.
 
 ---
 
-## Semantic search, as connected
-
-This was the one piece of integration work left, and it is done: `retriever_factory.get_retriever()` returns `SemanticRetriever`, which wraps the hybrid retriever in `Semantic_Analysis/`. The contract below is unchanged and is still the only thing this package depends on, which is why the swap touched exactly one file.
-
-### The contract (`retriever_interface.py`)
+## How the two workstreams connect (`retriever_interface.py`)
 
 ```python
 class Retriever(Protocol):
     def retrieve(self, query: str, top_k: int = 10) -> list[RetrievedEvidence]: ...
 ```
 
-Each item in the returned list needs **two required fields**:
+`rag/semantic_retriever.py` adapts `Semantic_Analysis`'s `Candidate` objects into this shape. Only `kys_id` (int) and `score` (float) are required to cross the boundary — that's the one hard coupling point, and it's what kept the two workstreams independently buildable. Two more fields ride along as optional, presentation-only passengers: `why` (the retriever's own match explanation, e.g. `"matched: led, street; semantically similar title; product specification"`) and `tier` (`"Highly relevant"` / `"Related"` / `"Possibly relevant"`) — both flow untouched through `Evidence` (`schemas.py`) and out through `/recommend`'s `evidence` array, for a frontend "why this applies" card. Nothing else from `Semantic_Analysis`'s richer output (`requirements`, `cited_standards` — see its README section 9) crosses this boundary; the RAG layer re-derives everything else it needs from `standards.jsonl` by `kys_id` instead.
 
-- **`kys_id: int`** — must match the `kys_id` column in `standards.csv`/`standards.jsonl`. This is the *only* join key the entire rest of the pipeline uses (metadata hydration, KG expansion, grounding validation all key off it). Whatever ID scheme the embedding index uses internally (chunk id, row index, vector id, ...) must resolve back to this `kys_id` — that mapping is the actual integration work.
-- **`score: float`** — any scale, used only for ordering. Not compared or normalized against anything else.
+### Before/after: what the integration actually changed
 
-Optional, ignored downstream: `matched_text`, `is_number`.
+**Concrete example** (query: `"LED street lights, 90W, 230V AC, outdoor use, IP66 protection."`):
 
 ### How it is wired
 
@@ -133,7 +145,7 @@ Run `python run_query.py "<some query>"` (from the repo root) before and after t
 
 **Concrete before/after example** (query: `"LED street lights, 90W, 230V AC, outdoor use, IP66 protection."`):
 
-With `MockRetriever`, the top-5 retrieved standards were:
+With `MockRetriever` (naive keyword overlap), the top-5 retrieved standards were:
 ```
 0.2828  IS 9421:1980   "Colours of indicator lights for shipboard use"      ← irrelevant
 0.2582  IS 3682:1966   "Flameproof ac motors for use in mines"              ← irrelevant
@@ -141,7 +153,17 @@ With `MockRetriever`, the top-5 retrieved standards were:
 0.2390  IS 16107 ...   "LED Street Lighting Luminaire"                      ← the actual answer
 0.2390  IS 19517 ...   "Sunglasses and Related Eyewear"                     ← irrelevant
 ```
-The correct standard (`IS 16107 (Part 2/Sec 2):2017`) was tied for the *lowest* score, purely because of generic word overlap ("lights", "use"). The pipeline still got the right answer — the grounding validator and LLM correctly picked it out and rejected the noise — but a real embedding-based retriever should rank it clearly first and likely surface additional genuinely related standards instead of noise.
+The correct standard (`IS 16107 (Part 2/Sec 2):2017`) was tied for the *lowest* score, purely because of generic word overlap ("lights", "use").
+
+With `SemanticRetriever` (keyword-only build, `--no-dense`), the same query now returns:
+```
+0.9536  IS 16107 (Part 2/Sec 2):2017  "LED Street Lighting Luminaire"       ← correct, ranked #1
+0.9416  IS 16102 (Part 1):2026        "Self-Ballasted LED Lamps..."         ← genuinely related
+0.9198  IS 10322 (Part 5/Sec 9):2017  "Luminaires... rope lights"
+0.9095  IS 7848:1975                  "Studio spot lights..."
+0.9009  IS 9421:1980                  "Colours of indicator lights..."
+```
+The LLM went on to recommend both `IS 16107` and `IS 16102`, plus three KG-verified `REFERENCES` relationships as related standards — none of that was reachable when the correct answer was buried in noise. This was run live, end-to-end, through `run_query.py`, not simulated.
 
 ---
 

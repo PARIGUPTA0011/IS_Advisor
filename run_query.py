@@ -6,9 +6,11 @@ Usage:
     python run_query.py "90W LED street light IP66" --lang hi
     python run_query.py "\u0938\u0921\u093c\u0915 \u0915\u0940 \u092c\u0924\u094d\u0924\u0940 90W IP66"
 
-The language is detected from the query; `--lang` (ISO or FLORES code) forces
-it, which is also how to ask an English question and read the answer in
-another language.
+The language is detected from the query; `--lang` forces it, which is also how
+to ask an English question and read the answer in another language. Any of
+three spellings works - a plain name (`--lang Hindi`), an ISO code
+(`--lang hi`) or a FLORES-200 code (`--lang hin_Deva`) - so the value the
+frontend sends and the value typed here are interchangeable.
 """
 
 import sys
@@ -45,7 +47,7 @@ def main() -> None:
     if "--lang" in sys.argv:
         index = sys.argv.index("--lang")
         if index + 1 >= len(sys.argv):
-            print("--lang needs a language code, for example --lang hi")
+            print("--lang needs a language, for example --lang hi or --lang Hindi")
             sys.exit(1)
         language = sys.argv[index + 1]
 
@@ -103,7 +105,9 @@ def main() -> None:
     for e in result.evidence:
         title = e.record.title if e.record else "?"
         is_number = e.record.is_number if e.record else "?"
-        print(f"  kys_id={e.kys_id} score={e.score:.4f} {is_number}  {title[:70]}")
+        print(f"  kys_id={e.kys_id} score={e.score:.4f} tier={e.tier}  {is_number}  {title[:70]}")
+        if e.why:
+            print(f"    why: {e.why}")
 
 
 if __name__ == "__main__":

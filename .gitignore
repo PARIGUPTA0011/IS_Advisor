@@ -27,19 +27,26 @@ __pycache__/
 build/
 dist/
 
-# --- derived retrieval artifacts ---------------------------------------------
-# Rebuild with Semantic_Analysis/01_build_index.py (~28 min, or ~8 s with
-# --no-dense). None of this belongs in git: embeddings.npy alone is 35 MB, and
-# it is a pure function of standards.csv plus the encoder named in
-# index_meta.json.
-Semantic_Analysis/artifacts/
-
-# The same file types wherever else they land - a stray index built outside
-# artifacts/ is still 35 MB of derived data.
+# --- retrieval artifacts: deliberately COMMITTED, not ignored ----------------
+# Semantic_Analysis/artifacts/ is intentionally committed so a clone does not
+# need to run 01_build_index.py (up to 25 min) before working - important for
+# SIH demo reliability. Re-run the build and recommit if
+# IS_Standards_Data/standards.csv changes, or if is_advisor/config.py names a
+# different BI_ENCODER: the loader compares the text fingerprint *and* the
+# encoder name recorded in index_meta.json, and falls back to keyword-only
+# rather than erroring, so a missed recommit degrades quietly instead of
+# breaking loudly.
+#
+# The binary patterns below are for indexes built *outside* that directory - a
+# stray embeddings.npy elsewhere is still 35 MB of derived data - so the
+# committed artifacts are re-included immediately after them. Without those two
+# negations, `git add` would silently refuse the very files we mean to track.
 *.npy
 *.pkl
 *.parquet
 *.faiss
+!Semantic_Analysis/artifacts/
+!Semantic_Analysis/artifacts/**
 
 # --- model caches ------------------------------------------------------------
 # Only bites if HF_HOME or TRANSFORMERS_CACHE is pointed inside the repo. The

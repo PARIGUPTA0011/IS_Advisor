@@ -4,37 +4,58 @@ python-dotenv==1.2.3
 
 # rag/llm_client.py speaks the OpenAI chat-completions API for the "groq",
 # "ollama" and "openai_compatible" providers - one SDK covers Groq, Ollama,
-# llama.cpp, vLLM, LM Studio and OpenRouter. The `together` and `anthropic`
-# providers need their own SDKs instead (`pip install together` /
-# `pip install anthropic`); neither is pinned here, because the free providers
-# are the default path and neither SDK is needed to use them.
+# llama.cpp, vLLM, LM Studio and OpenRouter. `together` below is only needed for
+# LLM_PROVIDER=together; `anthropic` is not pinned at all, so install it
+# (`pip install anthropic`) only if you use that provider.
 openai==3.19.2
 
-# api/main.py. Documented in rag/README.md as `uvicorn api.main:app` but never
-# pinned, so a fresh install could run run_query.py and not the API.
+# api/main.py - the FastAPI layer, including POST /recommend/document.
+# python-multipart is what FastAPI uses to parse the uploaded file.
 fastapi==0.141.1
 uvicorn==0.51.0
+python-multipart
+together
 
 # Semantic_Analysis: local retrieval stack, no API keys, CPU only
-sentence-transformers==6.0.1
-torch==2.14.0
-transformers==5.17.0
-faiss-cpu==1.15.0
+#
+# These versions are verified working together on Windows/CPU/Python 3.11 (see
+# Semantic_Analysis/README.md section 1, "If the pinned versions will not import").
+# A newer transformers/sentence-transformers/torch combo may work too, but on a
+# machine with any pre-existing TensorFlow/Keras install, `transformers` will also
+# need TF disabled at runtime regardless of version - see the note below.
+#
+# Install the CPU-only torch build FIRST, from PyTorch's own index (the plain
+# PyPI package can pull in a much larger CUDA build):
+#   pip install torch==2.1.2 --index-url https://download.pytorch.org/whl/cpu
+# Then install the rest of this file as usual.
+sentence-transformers==3.0.1
+torch==2.1.2
+transformers==4.44.2
+huggingface-hub==0.25.2
+tokenizers==0.19.1
+faiss-cpu==1.11.0
 rank-bm25==0.2.2
 spacy==3.8.16
 pyarrow==25.0.1
-numpy==2.5.3
+numpy==1.26.1
 scikit-learn==1.9.1
 pdfplumber==0.11.10
 # spaCy model: python -m spacy download en_core_web_sm
+#
+# If `transformers` crashes on import with
+# "AttributeError: module 'inspect' has no attribute 'ArgSpec'", it means an
+# old TensorFlow/Keras install on this machine is being picked up by
+# transformers' optional TF integration. Fix: set USE_TF=0 in the environment
+# before running anything that imports sentence_transformers/transformers
+# (e.g. `$env:USE_TF="0"` in PowerShell, or `export USE_TF=0` in bash) - this
+# forces the PyTorch-only code path, which is all this project uses anyway.
 
 # multilingual/: language detection, translation, localised output.
 # sentencepiece is what the NLLB and IndicTrans2 tokenizers load their
 # vocabularies with. The version is pinned low deliberately: 0.2.2 segfaults on
 # import under Anaconda Python 3.11.7 on Windows (immediate SIGSEGV, before any
 # of our code runs), and 0.1.99 imports and works on the same machine. Same
-# family of problem as the torch/transformers note in Semantic_Analysis/README
-# section 1.
+# family of problem as the torch/transformers note above.
 sentencepiece==0.1.99
 # Optional, and only consulted for Latin-script text: the script rules decide
 # every non-Latin language on their own, and langdetect is poor at romanised
@@ -44,8 +65,8 @@ langdetect==1.0.9
 #
 # Translation checkpoints are downloaded on first use, not installed:
 #   facebook/nllb-200-distilled-600M          ~2.5 GB, ungated
-#   ai4bharat/indictrans2-indic-en-dist-200M  ~0.9 GB, GATED on HuggingFace
-#   ai4bharat/indictrans2-en-indic-dist-200M  ~0.9 GB, GATED on HuggingFace
+#   ai4bharat/indictrans2-indic-en-dist-200M  GATED on HuggingFace
+#   ai4bharat/indictrans2-en-indic-dist-200M  GATED on HuggingFace
 # The IndicTrans2 pair needs a HuggingFace account, the model terms accepted,
 # and HF_TOKEN in the environment. Without a token the layer runs on NLLB and
 # says so in GET /health. IndicTransToolkit (its official preprocessor) needs a

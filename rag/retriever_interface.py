@@ -18,6 +18,8 @@ class RetrievedEvidence(TypedDict, total=False):
     score: float                   # REQUIRED. Relevance score, any scale, treated as opaque/relative.
     matched_text: Optional[str]    # OPTIONAL. Snippet/title the retriever matched on.
     is_number: Optional[str]       # OPTIONAL. Convenience only; RAG re-hydrates the authoritative value.
+    why: Optional[str]             # OPTIONAL. Retriever's own explanation (e.g. matched query words, boosts applied).
+    tier: Optional[str]            # OPTIONAL. Retriever's own relevance band (e.g. "Highly relevant"), if it computes one.
 
 
 REQUIRED_FIELDS = ("kys_id", "score")

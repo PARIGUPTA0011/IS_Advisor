@@ -13,6 +13,15 @@ was built and tested against. That ordering is load-bearing: the validator in
 grounding_validator.py matches IS numbers and clause patterns in the model's
 prose, and it cannot do that in a language it is not written for. Translating
 before validation would mean validating nothing.
+
+Two translation designs were written in parallel on different branches and this
+is the one that runs. `rag/query_translator.py` is the other: it asks the LLM to
+translate the query, which needs no model download and no extra dependency, but
+covers Hindi only and puts the output-language switch inside the prompt - which
+would mean the grounding validator reading prose in a language it cannot check.
+It is kept in the tree, unused, because the LLM route is the right fallback for
+the four languages NLLB-200 does not carry (Bodo, Dogri, Konkani, Santali) if
+that gap ever needs closing without an IndicTrans2 token.
 """
 
 import dataclasses
@@ -22,13 +31,13 @@ from rag.context_builder import build_context
 from rag.grounding_validator import ValidationResult, validate
 from rag.kg_client import KGClient
 from rag.kg_editions import prune_superseded_editions
-from rag.spec_coverage import coverage_warning, unsupported_terms
 from rag.llm_client import LLMClient
 from rag.metadata_store import MetadataStore
 from rag.prompt_builder import build_prompt
 from rag.response_parser import RecommendationResponse, parse_response
 from rag.retriever_interface import Retriever, RetrievedEvidence, validate_retrieved_evidence
 from rag.schemas import Evidence
+from rag.spec_coverage import coverage_warning, unsupported_terms
 
 
 def hydrate(
@@ -52,6 +61,8 @@ def hydrate(
                 score=item["score"],
                 matched_text=item.get("matched_text"),
                 record=record,
+                why=item.get("why"),
+                tier=item.get("tier"),
             )
         )
     return evidence
@@ -166,7 +177,13 @@ def run_query(
 
     `language` forces the input and output language; omitted, it is detected
     from the query. The answer comes back in that language, with IS numbers and
-    official titles left in English.
+    official titles left in English. Either spelling works - a FLORES code
+    ("hin_Deva"), an ISO code ("hi"), or the plain name the frontend sends
+    ("Hindi", "English") - because multilingual.languages.resolve accepts all
+    three. `query` (the caller's original text) is still what comes back as the
+    response's `query` field; `query_english` carries what retrieval saw.
+
+    The index itself is never touched, only the query used to search it.
     """
 
     from multilingual import prepare_query
@@ -202,6 +219,14 @@ def run_query(
     # block and the prompt's grounding rules are English, and a model asked to
     # reason in one language about evidence in another is being set up to
     # paraphrase rather than cite.
+    #
+    # `build_prompt` takes an optional `language` and we deliberately do not
+    # pass it. It would ask the LLM to write its reasons in the target language,
+    # and the grounding validator downstream matches IS numbers and clause
+    # patterns in that prose - in English. Localisation happens after validation
+    # instead (localise_response), so the checks run on text they can read and
+    # the reader still gets their own language. Two translation points would
+    # also translate twice.
     bundle = build_context(english_query, evidence)
     system_prompt, user_message = build_prompt(bundle, metadata_store)
     raw_output = llm_client.generate(system_prompt, user_message, json_mode=True)

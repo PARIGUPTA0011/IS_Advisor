@@ -1,0 +1,135 @@
+{
+  "app": {
+    "name": "IS-Advisor",
+    "tagline": "Make every specification defensible with standards intelligence."
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "analyze": "Analyze Tender",
+    "history": "History",
+    "settings": "Settings",
+    "about": "About"
+  },
+  "dashboard": {
+    "heading": "What are you procuring today?",
+    "subheading": "Describe a product, paste a requirement, or upload a tender to discover applicable Indian Standards.",
+    "placeholder": "e.g. 90W LED street lights for outdoor municipal roads",
+    "analyze": "Analyze",
+    "tryExample": "Try an example",
+    "examples": {
+      "led": "90W LED street lights",
+      "pump": "Centrifugal water pumps"
+    },
+    "uploadTitle": "Drop a tender here",
+    "uploadSubtitle": "PDF or TXT, up to 25MB",
+    "backendOffline": "The IS-Advisor backend isn't reachable right now. Start it and refresh.",
+    "checking": "Checking backend..."
+  },
+  "analyze": {
+    "modeText": "Describe Procurement Requirement",
+    "modeUpload": "Upload Tender",
+    "charCount": "{{count}} characters",
+    "clear": "Clear",
+    "analyzeButton": "Analyze",
+    "language": "Response language",
+    "examples": {
+      "led": "500 LED street lights, 90W, 230V AC, outdoor installation, IP66 protection, minimum luminous efficacy of 120 lm/W.",
+      "pumps": "Industrial centrifugal water pumps, 50 HP, for municipal water supply.",
+      "cables": "Procurement of PVC-insulated electrical cables for indoor wiring, 1100V grade."
+    },
+    "removeFile": "Remove",
+    "extracting": "Extracting text from document...",
+    "steps": {
+      "uploading": "Uploading document",
+      "extracting": "Extracting requirements",
+      "understanding": "Understanding specifications",
+      "searching": "Searching Indian Standards",
+      "building": "Building recommendations",
+      "evidence": "Generating evidence",
+      "done": "Analysis complete"
+    }
+  },
+  "results": {
+    "title": "Analysis Results",
+    "confidence": "Confidence",
+    "recommendations": "Recommended Standards",
+    "relatedStandards": "Related Standards",
+    "warnings": "Warnings",
+    "evidenceRetrieved": "Retrieved Evidence",
+    "whyThisApplies": "Why this applies",
+    "noRecommendations": "No standards could be confidently recommended for this query.",
+    "insufficientEvidence": "Not enough evidence was found to make a recommendation. Try rephrasing with more specific technical detail.",
+    "status": {
+      "current": "Current",
+      "withdrawn": "Withdrawn"
+    },
+    "tier": {
+      "Highly relevant": "Highly relevant",
+      "Related": "Related",
+      "Possibly relevant": "Possibly relevant"
+    },
+    "score": "Match score",
+    "newAnalysis": "New analysis",
+    "startNewAnalysis": "Start a new analysis from the Analyze page."
+  },
+  "history": {
+    "recentAnalyses": "Recent analyses",
+    "yourHistory": "Your analysis history",
+    "clear": "Clear history",
+    "emptyTitle": "No analyses yet",
+    "emptyBody": "No analyses yet — results from your searches will show up here.",
+    "analyze": "Analyze a tender",
+    "justNow": "just now",
+    "minutesAgo": "{{count}} minute(s) ago",
+    "hoursAgo": "{{count}} hour(s) ago",
+    "daysAgo": "{{count}} day(s) ago"
+  },
+  "about": {
+    "howItWorks": "How it works",
+    "stepOneTitle": "Describe your need",
+    "stepOne": "Tell us what you are procuring in your own words.",
+    "stepTwoTitle": "Find the right connections",
+    "stepTwo": "See how relevant standards relate to each other.",
+    "stepThreeTitle": "Review grounded recommendations",
+    "stepThree": "Every recommendation is checked against real evidence before it is shown to you.",
+    "standardsIndexed": "Standards Indexed",
+    "targetLanguages": "Target Languages",
+    "projectLine": "IS-Advisor · Standards intelligence for procurement"
+  },
+  "settings": {
+    "title": "Settings",
+    "appearance": "Appearance",
+    "light": "Light",
+    "dark": "Dark",
+    "system": "System",
+    "language": "Language",
+    "preferences": "Analysis preferences",
+    "topK": "Number of recommendations",
+    "about": "About IS-Advisor",
+    "aboutBody": "IS-Advisor recommends applicable Indian Standards for procurement specifications using hybrid semantic search, a knowledge graph of standard relationships, and an LLM grounded strictly in retrieved evidence.",
+  "systemStatus": "System status",
+  "connected": "Connected",
+  "disconnected": "Disconnected",
+  "retryConnection": "Retry connection",
+  "disconnectedHint": "Unable to reach the recommendation service. Check your connection and try again.",
+  "standards": "standards",
+  "backendOnline": "Backend online",
+  "backendOffline": "Backend offline",
+  "standardsLoaded": "{{count}} standards loaded"
+  },
+  "confidence": {
+    "high": "High confidence",
+    "medium": "Medium confidence",
+    "low": "Low confidence",
+    "insufficient_evidence": "Insufficient evidence",
+    "parse_error": "Could not parse response",
+    "unknown": "Unknown"
+  },
+  "errors": {
+    "generic": "Something went wrong. Please try again.",
+    "fileTooLarge": "File exceeds the 25MB limit.",
+    "unsupportedFile": "Only PDF and TXT files are supported.",
+    "emptyQuery": "Please describe what you're procuring first.",
+    "retry": "Retry"
+  }
+}
