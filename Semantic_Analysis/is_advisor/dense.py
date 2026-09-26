@@ -36,7 +36,8 @@ def load_encoder(name: str = config.BI_ENCODER):
     return _model_cache[name]
 
 
-def encode_documents(texts: list[str], model=None, batch_size: int = 64, show_progress: bool = True) -> np.ndarray:
+def encode_documents(texts: list[str], model=None, batch_size: int = 64, show_progress: bool = True,
+                     prefix: str | None = None) -> np.ndarray:
     """Embed the corpus. The document prefix is applied here, not stored.
 
     e5 wants "passage: " on documents and "query: " on queries, and treats the
@@ -46,7 +47,8 @@ def encode_documents(texts: list[str], model=None, batch_size: int = 64, show_pr
     with different prefixes needs no rebuild of anything but the vectors.
     """
     model = model or load_encoder()
-    prefix = getattr(config, "BI_ENCODER_DOC_PREFIX", "")
+    if prefix is None:
+        prefix = config.BI_ENCODER_DOC_PREFIX
     vectors = model.encode(
         [f"{prefix}{text}" for text in texts],
         batch_size=batch_size,
@@ -57,7 +59,7 @@ def encode_documents(texts: list[str], model=None, batch_size: int = 64, show_pr
     return vectors.astype("float32")
 
 
-def encode_queries(texts: list[str], model=None) -> np.ndarray:
+def encode_queries(texts: list[str], model=None, prefix: str | None = None) -> np.ndarray:
     """Encode queries, applying the model's retrieval prefix where it has one.
 
     The prefix comes from config rather than from sniffing the model name: the
@@ -67,7 +69,8 @@ def encode_queries(texts: list[str], model=None) -> np.ndarray:
     prevent on the other side of the same file.
     """
     model = model or load_encoder()
-    prefix = config.BI_ENCODER_QUERY_PREFIX
+    if prefix is None:
+        prefix = config.BI_ENCODER_QUERY_PREFIX
     prepared = [f"{prefix}{t}" for t in texts]
     vectors = model.encode(
         prepared, convert_to_numpy=True, normalize_embeddings=True, show_progress_bar=False

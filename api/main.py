@@ -37,7 +37,7 @@ from fastapi import FastAPI, File, HTTPException, UploadFile  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from pydantic import BaseModel
 
-from rag.kg_client import Neo4jKGClient
+from rag.kg_client import get_kg_client
 from rag.llm_client import get_llm_client
 from rag.metadata_store import MetadataStore
 from rag.pipeline import run_query
@@ -58,7 +58,7 @@ async def lifespan(app: FastAPI):
     store = MetadataStore()
     app_state["store"] = store
     app_state["retriever"] = get_retriever(store)
-    app_state["kg"] = Neo4jKGClient.from_env()
+    app_state["kg"] = get_kg_client()
     app_state["llm"] = get_llm_client()
     # Logged once at startup rather than as Neo4j notifications on every
     # request. An empty graph is a deployment problem, not a per-query one.

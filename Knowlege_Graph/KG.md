@@ -93,7 +93,12 @@ Relationships:
 (Standard)-[:MAINTAINED_BY]->(Committee)
 
 (Standard)-[:REQUIRES_CERTIFICATION]->(Certification)
+
+(Standard)-[:NORMATIVELY_REFERENCES]->(Standard)
 ```
+
+`NORMATIVELY_REFERENCES` comes from clause 2 of each standard, so it is stated by the standard
+itself, unlike the scraped `REFERENCES` edges. See `07_create_normative_relationships.py`.
 
 Example:
 
@@ -188,6 +193,25 @@ Creates:
 ```
 
 Currently, **725 standards** are connected to mandatory certification.
+
+---
+
+### `07_create_normative_relationships.py`
+
+Reads `Semantic_Analysis/data/normative_refs_edges.csv` (clause 2 normative references, exported by
+`Semantic_Analysis/08_export_normative_refs.py`) and creates:
+
+```text
+(Standard)-[:NORMATIVELY_REFERENCES {cited_as, in_edges_csv}]->(Standard)
+```
+
+35,896 edges. `in_edges_csv = true` on the 24,627 that also exist as scraped `REFERENCES`, which
+confirms them from the standard's own text; the other 11,269 are new. Details and caveats are in
+`Semantic_Analysis/data/NORMATIVE_REFS.md`.
+
+`02_create_graph.py` also sets two newer `standards.csv` columns on each `Standard` node: `ics`
+(ICS codes) and `reaffirmed_year_source` (`kys` or `bsb_preview`, where a preview year is a lower
+bound on the latest reaffirmation). Re-run `02` and then `07` to pick both up.
 
 ---
 

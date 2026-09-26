@@ -43,7 +43,10 @@ python 03_search.py "GI pipes 25mm" --no-translate             # English-only pa
 python 02_evaluate.py --ablate --show-misses 10
 python 04_ablate_vocabulary.py
 python 06_calibrate_tiers.py                     # add --apply to write thresholds
+python 02_evaluate.py --set tenders              # the real-tender evaluation set
 python tests/test_pipeline.py
+
+python ../demo/server.py                         # offline demo with the knowledge graph, see demo/README.md
 ```
 
 Use `--no-dense` on the build while iterating on text cleaning; it skips the only slow step.
@@ -129,7 +132,8 @@ cites one still needs it identified.
 
 ### Document text
 
-Embedded text is title, plain-language title, aspect, and the full classification path:
+Embedded text is title, plain-language title, aspect, the full classification path, and clause 1
+scope text where a usable one exists:
 
 ```
 Ordinary portland cement - Specification | Cement | Product Specification |
@@ -138,6 +142,18 @@ Building Materials including Paints Cement, concrete and Allied Products Cement 
 
 The bare title is not enough. "Specification for Bund Former" carries no domain signal until the
 classification path places it in agricultural implements.
+
+**Scope text** comes from the free BSB Edge preview pages, collected by `bis_scope_scraper.py` into
+`data/scope_text.csv` (method and coverage in `data/SCOPE_TEXT.md`). Only rows with status `ok` and
+`title_overlap` of at least 0.35 are used, which is **11,280 standards, 48% of the index**. The
+overlap gate drops the rows where bad OCR and mis-scraped pages concentrate. Adopted IS/ISO and
+IS/IEC standards almost never have one, because their preview carries only the National Foreword.
+That is a permanent limit of the source, not unfinished work.
+
+Scope text goes into the embedding and deliberately **not** into the keyword string. Only some
+documents have it, and appending it would roughly double their length, so BM25 length normalisation
+would penalise exactly the documents it was added to help. It also has a separate keyword index of
+its own. That index is built and measured, but it is off by default (section 7).
 
 The keyword index sees three things the embedding does not:
 
@@ -355,14 +371,20 @@ number for years. That is what `successor_parts` does.
 
 | Component | Model | Notes |
 |---|---|---|
-| Bi-encoder | `intfloat/multilingual-e5-small` | 384 dimensions, ~100 languages. Replaced `BAAI/bge-small-en-v1.5`, which was 384-dimensional too, so the index kept its shape and its 35 MB |
+| Bi-encoder, primary | `BAAI/bge-small-en-v1.5` | every line that reaches retrieval in English: English input and anything translated. 384 dimensions |
+| Bi-encoder, fallback | `intfloat/multilingual-e5-small` | only lines still in a non-Latin script at retrieval (translation off, unavailable or failed). ~100 languages, 384 dimensions, loaded on first use. Section 7 has why there are two |
 | Cross-encoder | `cross-encoder/ms-marco-MiniLM-L-6-v2` | built and wired, off by default |
 | Keyword | `rank_bm25` Okapi | tokenizer now keeps Indic and Arabic script (section 14) |
 | Vector search | `faiss-cpu`, numpy fallback | 23,341 × 384 floats is ~35 MB, so exhaustive search is viable either way |
 | Translation | `facebook/nllb-200-distilled-600M`, `ai4bharat/indictrans2-*-dist-200M` | query side and answer side, CPU, downloaded on first non-English query (section 14) |
 
 Embedding 23,341 documents took **468.8 seconds** on CPU across 365 batches. That is the only slow
-step in the build; everything else finishes in four to eight seconds.
+step in the build; everything else finishes in four to eight seconds. With scope text embedded, the
+documents are longer (median 61 words for the 11,280 with scope text), and the full build took
+575.8 seconds. The multilingual fallback vectors are a second pass over the same text with e5,
+which is several times slower on CPU: a full build embedding with e5 alone took 2,115.8 seconds on
+the same machine. `--no-fallback` skips
+that pass, at the cost of untranslated non-English lines falling back to the English encoder.
 
 The embedding step is the one figure that moves a lot with the machine and the `torch` build. A
 second CPU machine running the fallback pins in section 1 took **1,518.7 seconds** for the same 365
@@ -394,10 +416,12 @@ the encoder name in `index_meta.json`, warns, and falls back to keyword-only.
 
 | File | Contents |
 |---|---|
-| `corpus.parquet` | the 23,341 indexed documents with both text fields |
+| `corpus.parquet` | the 23,341 indexed documents with both text fields and the scope text |
 | `lookup.parquet` | all 35,524 rows for citation resolution |
 | `bm25.pkl` | pickled keyword index |
-| `embeddings.npy` | 23,341 × 384 float32 |
+| `bm25_scope.pkl` | keyword index over scope text alone, 11,280 documents; loaded but off by default |
+| `embeddings.npy` | 23,341 × 384 float32, primary encoder (bge-small-en) |
+| `embeddings_multilingual.npy` | 23,341 × 384 float32, fallback encoder (multilingual-e5-small), same text |
 | `index_meta.json` | fingerprints, document count, model name |
 | `eval_results.csv`, `vocabulary_ablation.csv` | last measurement run |
 
@@ -418,6 +442,9 @@ All knobs live in `is_advisor/config.py`:
 | `RRF_K` | 60 | rank-fusion damping |
 | `FINAL_TOP_K` | 10 | library default for candidates returned; `03_search.py` asks for 5 |
 | `USE_RERANKER` | `False` | cross-encoder off by default |
+| `USE_SCOPE_RETRIEVER` | `False` | scope-text keyword index as a third fused list, off by default |
+| `SCOPE_TOP_K` | 50 | candidates pulled from the scope index when it is on |
+| `SCOPE_MIN_TITLE_OVERLAP` | 0.35 | quality gate on scope rows |
 | `BOOST_PRODUCT_SPEC` | 0.06 | product specifications over test methods |
 | `BOOST_METHODS_OF_TESTS` | −0.03 | mild demotion, still reachable |
 | `BOOST_MANDATORY_CERT` | 0.03 | — |
@@ -432,26 +459,147 @@ All knobs live in `is_advisor/config.py`:
 
 ## 7. Measured results
 
-121 evaluation line items, no query containing its own IS number. **Read section 8 before quoting
-any of these numbers.**
+Two evaluation sets, and they disagree by a wide margin (section 8):
 
-### Retrievers (`02_evaluate.py --ablate`)
+- **`data/eval_set.jsonl`, 121 hand-written items.** Phrased by someone reading BIS titles. This is
+  an upper bound and a regression guard.
+- **`data/eval_tenders.jsonl`, 86 real tender BOQ lines.** The procurement officer's own wording,
+  with the cited standard as gold. This is the closer estimate of field accuracy.
 
-| Configuration | Recall@1 | Recall@5 | Recall@10 | MRR | sec/query |
+| Shipping default (hybrid) | Recall@1 | Recall@5 | Recall@10 | MRR |
+|---|---|---|---|---|
+| hand-written set | 0.727 | 0.917 | 0.959 | 0.810 |
+| **real tender lines** | **0.395** | **0.605** | **0.709** | **0.470** |
+
+**Quote the second row.** The first is what the system does on text written to resemble its index.
+No query in either set contains its own IS number. **Read section 8 before quoting any of these
+numbers.**
+
+### Real tender lines (`02_evaluate.py --ablate --set tenders`)
+
+| Configuration | Recall@1 | Recall@5 | Recall@10 | MRR | R@5 without word splitting | R@5 before scope text |
+|---|---|---|---|---|---|---|
+| keyword only | 0.244 | 0.465 | 0.547 | 0.337 | 0.407 | 0.407 |
+| scope keyword index only | 0.140 | 0.337 | 0.372 | 0.221 | 0.326 | — |
+| dense only | 0.372 | 0.570 | 0.640 | 0.457 | 0.558 | 0.430 |
+| **hybrid, shipping default** | **0.384** | **0.593** | **0.709** | **0.464** | 0.581 | 0.488 |
+| hybrid + scope keyword index *(off)* | 0.302 | 0.523 | 0.663 | 0.392 | 0.465 | — |
+| keyword + reranker | 0.302 | 0.523 | 0.605 | 0.387 | 0.488 | — |
+| dense + reranker | 0.267 | 0.512 | 0.663 | 0.377 | 0.500 | — |
+| hybrid + scope keyword index + reranker | 0.291 | 0.570 | 0.674 | 0.403 | 0.570 | — |
+
+The last two columns are the same configuration one step back: without the query-side word
+splitting described below, and additionally on the index built before scope text (loaded from a copy
+of the old artifacts, and measured without word splitting). Keyword-only is identical in those two
+columns, as it should be: the keyword text of the index did not change.
+
+What real text says that the hand-written set could not:
+
+- **Dense retrieval beats keyword retrieval on real text, and by a lot.** 0.570 against 0.465
+  Recall@5. On the hand-written set it is the other way round (0.843 against 0.917), because those
+  items share words with BIS titles. The hybrid default was shipped against the hand-written
+  measurement on exactly this argument, and real text now backs it.
+- **Scope text is worth about 9 points of Recall@5 on real text.** Measured before word splitting,
+  hybrid went from 0.488 to 0.581, and dense-only from 0.430 to 0.558. That is larger than the gain on the hand-written set, as
+  `SCOPE_TEXT.md` section 5 predicted.
+- **The separate scope keyword index still makes things worse** (0.593 to 0.523), so keeping it off
+  holds on real text too. The reranker also stays below the default.
+- **Run-together PDF text was a large loss, and word splitting recovers part of it.** 28 of the 86
+  items came out of their PDF with the spaces gone ("Supplying,installing,testingandcommissioningof
+  GIpipes"), and scored 0.464 Recall@5 against 0.638 for the other 58.
+
+### Word splitting on the query side (`is_advisor/wordsplit.py`)
+
+`strip_boilerplate` now re-inserts the lost spaces before anything else reads the query: dynamic
+programming over each long run of letters, choosing the split whose words are most frequent in our
+own corpus (titles, classification path, scope text) plus a short list of procurement verbs. No model
+and no download. On the shipping default:
+
+| Real tender lines, hybrid | Recall@1 | Recall@5 | Recall@10 | MRR | glued lines R@5 (28) |
 |---|---|---|---|---|---|
-| keyword only | 0.793 | **0.909** | 0.950 | 0.849 | 0.06 |
-| dense only | 0.686 | 0.843 | 0.884 | 0.758 | 0.06 |
-| hybrid, shipping default | 0.744 | 0.884 | **0.967** | 0.817 | 0.11 |
-| keyword + reranker | 0.620 | 0.826 | 0.901 | 0.719 | 1.64 |
-| dense + reranker | 0.620 | 0.826 | 0.876 | 0.709 | 1.83 |
-| hybrid + reranker | 0.620 | 0.818 | 0.876 | 0.708 | 1.84 |
-| hybrid + requirement boost *(built, measured, removed)* | 0.717 | 0.883 | 0.942 | 0.784 | 0.13 |
+| without word splitting | 0.302 | 0.581 | 0.674 | 0.403 | 0.464 |
+| **with word splitting** | **0.384** | **0.593** | **0.709** | **0.464** | **0.536** |
 
-Every row but the last was re-measured together on the 121-item set, on the multilingual index
-(section 14). The requirement-boost row cannot be re-run, because the code it measures was deleted;
-it is left here at its original 120-item figures as the record of why it was deleted, and should be
-compared against the 120-item hybrid numbers it was measured beside (0.725 / 0.883 / 0.942 / 0.794),
-not against the row above it.
+The hand-written set is unchanged at the default (it has no run-together text); dense-only moved
+from 0.835 to 0.843 Recall@5.
+
+The first version measured *worse* at Recall@5 (0.558), and the reason is worth recording. It also
+split misspellings: "treatement" became "treat em ent", "construcion" became "constru ci on",
+because OCR'd scope text puts fragments like "ent" and "ion" in the vocabulary about as often as
+real words like "tee" and "pvc". Two guards fixed it. Pieces of three letters or fewer must come
+from a whitelist of function words and tender abbreviations (gi, ms, di, tmt, fe, mm, ...), and a
+split whose pieces average under four letters is rejected as a misspelling. Genuinely glued text
+averages about five. Misspellings are now left exactly as written.
+
+These guards were shaped while looking at the same 86 items the gain is measured on. The rules are
+generic, not item-specific, but treat the gain as optimistic until a fresh set of tender lines
+confirms it.
+
+### Hand-written set (`02_evaluate.py --ablate`)
+
+"Family R@5" is Recall@5 on the 12 items from the nine miss families named in
+`data/SCOPE_TEXT.md` section 1 (`02_evaluate.py --families`).
+
+| Configuration | Recall@1 | Recall@5 | Recall@10 | MRR | Family R@5 | sec/query |
+|---|---|---|---|---|---|---|
+| keyword only | **0.810** | **0.917** | **0.959** | **0.862** | 0.583 | 0.05 |
+| scope keyword index only | 0.430 | 0.537 | 0.595 | 0.484 | 0.250 | 0.02 |
+| dense only | 0.636 | 0.843 | 0.901 | 0.731 | 0.500 | 0.04 |
+| hybrid, shipping default | 0.727 | **0.917** | **0.959** | 0.810 | 0.667 | 0.08 |
+| hybrid + scope keyword index *(built, off)* | 0.521 | 0.752 | 0.868 | 0.631 | 0.500 | 0.10 |
+| keyword + reranker | 0.595 | 0.876 | 0.926 | 0.713 | **0.750** | 1.13 |
+| dense + reranker | 0.587 | 0.851 | 0.909 | 0.698 | 0.667 | 1.18 |
+| hybrid + scope keyword index + reranker | 0.587 | 0.851 | 0.876 | 0.694 | 0.667 | 1.25 |
+| hybrid + requirement boost *(built, measured, removed)* | 0.717 | 0.883 | 0.942 | 0.784 | — | 0.13 |
+
+Every row but the last was re-measured together on the 121-item set, against the index built with
+scope text embedded, and after the two gold labels corrected in section 8 (IS 2556 and IS 10124).
+That relabel alone moved the default from 0.909 to 0.917 Recall@5: the IS 10124 item became a hit.
+It is a correction of the answer key, not a retrieval gain. The requirement-boost row cannot be re-run, because the code it measures was
+deleted; it is left here at its original 120-item figures as the record of why it was deleted, and
+should be compared against the 120-item hybrid numbers it was measured beside
+(0.725 / 0.883 / 0.942 / 0.794), not against the rows above it.
+
+The `sec/query` column is machine-dependent, so read it as ratios rather than absolutes. The
+reranker's cost relative to the retrieval it re-sorts is the part that travels: roughly 15x the
+shipping default, and 20x keyword-only.
+
+### Scope text (clause 1)
+
+Measured before and after the full rebuild, shipping default configuration, on the hand-written set
+**before** the section 8 relabel (the real-tender comparison is in the first table of this section):
+
+| Index | Recall@1 | Recall@5 | Recall@10 | MRR | Family R@5 |
+|---|---|---|---|---|---|
+| before: titles and classification only | **0.719** | 0.876 | 0.934 | 0.787 | 0.333 (4/12) |
+| after: scope text in the embedding | 0.711 | **0.909** | **0.959** | **0.796** | **0.583 (7/12)** |
+
+**Scope text in the embedding is a clear win.** The miss families are where it was supposed to help,
+and they are where it helped. IS 1554 "armoured LT power cable" went from rank 10 to 2, IS 2556 from
+6 to 5, IS 7098 from 3 to 2, and dense-only Recall@10 rose from 0.868 to 0.901. Recall@1 fell by one
+item, which is inside the noise of a 121-item set. As `SCOPE_TEXT.md` section 5 predicted, the
+hand-written set understates this: its items are phrased close to BIS titles, which is the case
+scope text is least needed for.
+
+**IS 458 is fixed, and by exactly what section 8 said was missing.** The query says "reinforced
+cement concrete pipes"; the title says "Precast Concrete Pipes (with and without Reinforcement)". The
+scope reads "requirements for reinforced and unreinforced precast cement concrete pipes … used for
+water mains, sewers, culverts and irrigation". It was not in the top 10 before and is now rank 5.
+Nothing was tuned for it. The item stays in the evaluation set as the record of the fix.
+
+**A separate keyword index over scope text makes retrieval worse, so it is off by default.** It was
+the recommended integration in `SCOPE_TEXT.md` section 4. As a third list at equal weight in rank
+fusion, it dropped Recall@5 from 0.909 to 0.736 and Recall@1 from 0.711 to 0.496. On its own it
+reaches only 0.529. The argument for it was that a standard without scope text is simply absent from
+its list and loses nothing. That part holds. What it missed is the other side: the list covers 48%
+of the index, and for most queries its top ranks are standards that mention a query word in passing.
+At equal weight, that vote lifts them over the right answer. It stays built behind
+`USE_SCOPE_RETRIEVER` for re-measurement against real tender text; a down-weighted list is the obvious
+variant, and it is worth fitting only on a larger evaluation set than this one.
+
+**The reranker reads scope text too, and improves because of it.** `keyword + reranker` rose from
+0.826 to 0.860 Recall@5 with no change to the keyword side: the cross-encoder scores the embedded
+text, which now says what the standard covers. It is still below the shipping default.
 
 ### What the multilingual encoder changed, on English input
 
@@ -485,38 +633,92 @@ unrelated job was competing for the CPU, put hybrid + reranker at 5.9 s/query ra
 figures above come from a run with the machine to itself, and the recall columns were identical
 across both runs, retrieval being deterministic.
 
+### Two encoders: what real tender lines said about the swap
+
+The swap above was measured on the hand-written set, where it helped. The real-tender set did not
+exist yet. Once both changes met - the multilingual encoder and clause 1 scope text - all four
+combinations were built from the same corpus and measured on both sets (shipping hybrid, current
+query side including word splitting):
+
+| Encoder | Scope text | Hand-written R@5 | Real tender R@1 | Real tender R@5 | Real tender R@10 |
+|---|---|---|---|---|---|
+| bge-small-en | no | 0.893 | 0.256 | 0.488 | 0.616 |
+| multilingual-e5-small | no | 0.901 | 0.221 | 0.430 | 0.558 |
+| multilingual-e5-small | yes | **0.934** | 0.349 | 0.465 | 0.570 |
+| **bge-small-en** | **yes** | 0.917 | **0.395** | **0.605** | **0.709** |
+
+(The first row was measured before word splitting existed; the other three with it.)
+
+**On English that reads like BIS titles, e5 is slightly better; on real procurement English it is
+clearly worse.** Its dense half is where the difference sits: dense-only Recall@5 on real tender
+lines is 0.279 for e5 without scope text against 0.430 for bge, and 0.430 against 0.570 with it.
+Scope text helps both encoders, and the encoder choice matters more.
+
+That would be an argument for dropping e5, except that e5 is doing a different job. The multilingual
+layer (section 14) translates every non-English line to English before retrieval, so the English
+encoder serves Hindi through translation. What only e5 can do is match a line that is **still** not
+English when it reaches retrieval - translation switched off, its model not downloaded, or a line it
+failed on. So both are kept, and each line picks one:
+
+- **bge** for every line whose search text is Latin script: English, translated, and romanised Indic
+  (which is searched as typed on purpose, and which the curated trade names catch through BM25).
+- **e5** for a line whose search text is still at least 30% non-Latin letters.
+
+The choice is made from the text, not from the item's `translated` flag: the glossary appends English
+hints, so the English rendering differs from the raw line even when nothing was translated, and the
+flag reads true. With translation switched off, untranslated Devanagari lines route to e5 and it
+earns its place:
+
+| Untranslated line | English encoder, top 3 | Multilingual fallback, top 3 |
+|---|---|---|
+| पीने के पानी के लिये डक्टाइल आयरन पाइप (DI pipe, drinking water) | IS 4985, IS 13592, IS 3589 | **IS 8329**, IS 4985, IS 3589 |
+| सीमेंट 43 ग्रेड (43-grade cement) | IS 16353, IS 8043, IS 6452 | IS 8043, **IS 269**, IS 4031 (Part 14) |
+| आरसीसी कार्य के लिये टीएमटी सरिया Fe500D (TMT bars) | **IS 1786**, ... | **IS 1786**, ... |
+
+Three lines are a demonstration, not a measurement; a Hindi evaluation set is still the missing piece
+(section 14). Building that comparison also exposed a bug that had been deleting Indic vowel signs in
+`strip_boilerplate` ("आरसीसी कार्य" became "आरस स क र य"), the same trap the tokenizer fix in section
+14 describes. It is fixed; English text is unaffected, since the only characters it now keeps are
+combining marks.
+
+The cost of keeping both is one more 35 MB vector file and, only when a non-English line actually
+arrives, ~0.5 GB of memory for the second model.
+
 ### Vocabulary sources (`04_ablate_vocabulary.py`, keyword retrieval)
 
 | Corpus | Recall@1 | Recall@5 | Recall@10 |
 |---|---|---|---|
 | title + classification only | 0.686 | 0.802 | 0.868 |
 | + past-edition vocabulary | 0.694 | 0.802 | 0.868 |
-| + curated trade names | 0.793 | **0.917** | **0.950** |
-| both, shipping default | 0.793 | 0.909 | 0.950 |
+| + curated trade names | 0.793 | **0.909** | **0.950** |
+| both, shipping default | 0.793 | **0.909** | **0.950** |
 
 ### Relevance tiers (`06_calibrate_tiers.py`)
 
 Thresholds fitted so that most correct answers reach the top tier without it swallowing the list.
-Fitted values: `Highly relevant` at 0.95 and above, `Related` from 0.68.
+Fitted values: `Highly relevant` at 0.95 and above, `Related` from 0.82, fitted to the shipping
+configuration (bge-small-en primary encoder, scope text, word splitting).
 
 | Tier | Share of gold answers landing there |
 |---|---|
-| Highly relevant | 72.9% |
-| Related | 22.0% |
-| Possibly relevant | 5.1% |
+| Highly relevant | 69.5% |
+| Related | 25.0% |
+| Possibly relevant | 5.5% |
 
-4.6% of non-gold candidates reach the top tier. That is an upper bound on the false-positive rate
+4.7% of non-gold candidates reach the top tier. That is an upper bound on the false-positive rate
 rather than a measurement of it, because many of those are genuinely applicable standards that the
 evaluation set simply does not name as the single right answer.
 
-**These were re-fitted after the encoder swap, and they moved: 0.96 / 0.84 became 0.95 / 0.68.** A
+**They are re-fitted whenever the encoder changes, and they move.** The e5 swap took them from
+0.96 / 0.84 to 0.95 / 0.68, and returning to bge as the primary encoder took them to 0.95 / 0.82. A
 new encoder produces a different score distribution, so thresholds fitted to the old one stop meaning
 what they were fitted to mean - the tier boundary drifts relative to the answers it was supposed to
 separate. Nothing about ranking changed; the tiers are presentation over the existing score. The
-visible effect is that more gold answers now reach the top tier (72.9% against 64.9%) and more
-non-gold does too (4.6% against 2.8%), which is the same trade the fit has always been making, at a
-slightly more permissive setting. Re-running `06_calibrate_tiers.py --apply` is part of changing the
-encoder, not an optional follow-up.
+visible effect of the e5 fit was more gold answers in the top tier (72.9% against 64.9%) and more
+non-gold too (4.6% against 2.8%), the same trade the fit has always been making. Re-running
+`06_calibrate_tiers.py --apply` is part of changing the encoder, not an optional follow-up. The tiers
+are still fitted to the hand-written set, whose scores the real-tender set shows are optimistic; they
+should move to real tender lines once that set is large enough to fit on.
 
 ### What these say
 
@@ -552,40 +754,51 @@ where it does fire it mostly rewards standards the retriever had already ranked.
 still extracted and reported; they simply do not move the ranking. This is the second honest
 negative in this section, and the second time the measurement contradicted the plan.
 
-**Past-edition vocabulary earns almost nothing, and may cost slightly more than it earns.** It is the
-plan's highest-rated offline source, and on its own it moves Recall@1 by 0.008 and Recall@5 not at
-all. Added on top of the trade names it is no longer free: Recall@5 drops from 0.917 to 0.909, one
-item, because the extra wording lengthens documents that BM25 then penalises — the same length effect
-described under "what still misses" below. It stays on because one item is inside the noise of a
-121-item set, but the honest reading is now "no measured benefit" rather than "small benefit". Proper
-title cleaning is what shrank it, as described in section 3.
+**Past-edition vocabulary earns almost nothing.** It is the plan's highest-rated offline source, and
+on its own it moves Recall@1 by 0.008 and Recall@5 not at all. On top of the trade names it changes
+nothing either. An earlier draft of this table showed it costing one item (0.917 to 0.909), but the
+0.917 was a 120-item figure left over from before the set grew to 121. Re-measured on 121 items, both
+rows read 0.909. The honest reading is "no measured benefit", not "small benefit" and not "small
+cost". Proper title cleaning is what shrank it, as described in section 3.
 
 **Curated trade names look like the largest single win, and that number is partly circular.** The
 same person wrote `data/aliases.csv` and the evaluation items, so items phrased "GI pipes" or "paver
 block" are matched by aliases written with those words in mind. The direction is real, because trade
 names genuinely appear in no BIS text, but +0.115 Recall@5 overstates what unseen tenders will give.
 
-**Dense retrieval still loses to keyword retrieval here, and that is still not a reason to drop
-it.** The gap narrowed with the multilingual encoder - Recall@5 0.843 against keyword's 0.909, where
-it used to be 0.826 - but the ordering is unchanged. The evaluation items were written by someone
+**On the hand-written set, dense retrieval alone still loses to keyword retrieval, and hybrid now
+ties it. On real tender text the order reverses.** The hand-written items were written by someone
 reading BIS titles, so lexical overlap with those titles is unusually high, which is exactly the
-condition keyword search wins under. Real tender prose is the case dense retrieval exists to cover,
-and a non-English query has no keyword path at all until it is translated. The shipping default is
-therefore hybrid, chosen against the measurement and documented here rather than quietly; and on
-Recall@10 the fused default is now ahead of both halves (0.967 against 0.950 and 0.884).
-`03_search.py --no-dense` switches to keyword-only for anyone who disagrees.
+condition keyword search wins under. There, hybrid ties keyword-only at Recall@5 (0.917) and Recall@10
+(0.959), and keyword-only still wins Recall@1 (0.810 against 0.727). On the 86 real tender lines,
+keyword-only falls to 0.465 Recall@5 while dense reaches 0.570 and hybrid 0.593. Hybrid stays the
+default, and a non-English query has no keyword path at all until it is translated
+(section 14); `03_search.py --no-dense` switches to keyword-only.
 
 ### What still misses
 
-14 of 121 items miss at rank 5 under the shipping default, one fewer than before the encoder swap.
-Two patterns account for most of them, and one is the IS 458 item section 8 describes as a deliberate
-failure.
+On the hand-written set, 10 of 121 items miss at rank 5 under the shipping default, down from 15
+before scope text. Four of the five were fixed by scope text and one by correcting its label
+(IS 10124, section 8):
 
-**Multi-part standards where the query names the family, not the part.** Half the miss list: IS 1367
-threaded fasteners, IS 2556 sanitary appliances, IS 10124 PVC fittings, IS 13730 winding wires,
-IS 1554 armoured cable, IS 2062 structural steel, IS 1239 galvanized tubes. A procurement officer writes "armoured LT power cable"; the dataset holds
-a dozen near-identical part titles, and nothing in a title says which part covers which case. Clause
-1 scope text would settle this and titles cannot.
+- IS 1367 (Parts 10, 13), threaded fastener supply conditions
+- IS 13730 (Part 31), glass-fibre-covered winding wires
+- IS 2062 (Part 1), "structural steel sections for roof trusses"
+- IS 8329, "DI pipes with socket and spigot ends"
+- IS 1239 (Part 1), IS 17633, IS 16049, IS 13010, IS 383, IS 10701: single items outside the two
+  patterns below
+
+**Multi-part standards where the query names the family, not the part.** A procurement officer
+writes "armoured LT power cable"; the dataset holds a dozen near-identical part titles, and nothing
+in a title says which part covers which case. Scope text fixed the IS 1554, IS 2556 and IS 7098
+items. What remains is mostly outside its reach:
+
+- **IS 1367 and IS 13730** are adoption-heavy families; only 3 of 22 and 5 of 43 parts have scope
+  text, and IS 13730 (Part 31) has none.
+- **IS 10124** was a labelling error, not a retrieval one. Its twelve sibling parts carry
+  near-identical scopes, and the query asks for "sockets and bends"; bends are Parts 8 to 13, and
+  those were exactly the parts ranked above the gold Part 2. The gold now lists the socket and bend
+  parts, and the item ranks first (section 8).
 
 **Descriptive phrasing that dilutes a short alias hit.** "Supply of DI pipes with socket and spigot
 ends for the water distribution network" does contain the alias "DI pipe", and "DI pipe" on its own
@@ -602,6 +815,13 @@ try next.
 
 Note that the miss list printed by `02_evaluate.py --ablate` comes from the last configuration in
 the table, not the default. Run it without `--ablate` for the default configuration's misses.
+
+On real tender lines, 35 of 86 miss at rank 5 (`02_evaluate.py --set tenders --show-misses 40`).
+Beyond run-together text that the splitter cannot repair, many misses are short lines for common water-supply
+fittings and building materials: "C.P. brass bib cock of approved quality" (IS 8931), "cast iron
+double flanged sluice valves" (IS 14846), "TMT steel reinforcement" (IS 1786). These have not yet
+been diagnosed item by item. Some cannot be explained by vocabulary alone: the IS 14846 title itself
+says "sluice valve".
 
 ### What the test-tender fixes did to these numbers
 
@@ -647,14 +867,62 @@ One item is in there as a **documented failure rather than a target**: RCC pipes
 (with and without Reinforcement)", so the query and the document share almost no words. It sits in
 the set to keep that gap visible. Tuning retrieval to rescue one item would be fitting to the test.
 
+**It has since been fixed, and it stays in the set as the record of the fix.** Nothing was tuned for
+it. Adding clause 1 scope text to the embedded text moved it from outside the top 10 to rank 5,
+because the scope says "reinforced and unreinforced precast cement concrete pipes" outright
+(section 7). A documented failure that was later fixed for a stated reason is stronger evidence than
+one that was never recorded.
+
 That item is id 121, and it was added after the first measurement pass. Every figure in section 7 has
 since been re-measured with it included, which is why the retrieval numbers there are a little lower
 than an earlier draft of this file quoted: the hit counts did not change, the denominator did. It
-misses at rank 10 as intended, so it costs roughly 0.008 on each recall figure by arithmetic alone.
+missed at rank 10 as intended until scope text was added; at that point it cost roughly 0.008 on
+each recall figure by arithmetic alone.
 
-Replacing this file with real tender lines is the highest-value next task in this workstream. It
-doubles as the strongest vocabulary source available: the words around "conforming to IS xxxx" in a
-real tender are the procurement officer's own phrasing for that standard.
+**Two gold labels were corrected on 2026-09-26, and each item records it in a `note` field.**
+IS 2556 (Part 17) turned out, from its scope text, to cover wall-mounted bidets, while its item asks
+for wash basins and water closets; the gold is now Part 4 and the water-closet Parts 2, 8, 15 and 16.
+The IS 10124 item asks for "sockets and bends", but only the sockets part was gold; the bend Parts 8
+to 13 were added. Part 1 (general requirements) was left out of both, since it applies to every part
+and would make the items trivially easy. Only the IS 10124 correction changed a number: it turned a
+miss into a hit, and section 7 says so rather than counting it as a gain.
+
+### The real-tender set: `data/eval_tenders.jsonl`
+
+86 line items taken from 17 public tender documents (bills of quantities and technical
+specifications from MEA, MCGM, CRPF, IISc, SBI, BHEL and others), built by
+`09_build_tender_eval.py` from the URL list in `data/tender_sources.txt`. Each item keeps its source
+URL and its verbatim `source_text`, so every one can be checked against the original.
+
+- **Gold is the standard the tender cites.** An engineer wrote "Providing and fixing … conforming to
+  IS 15622"; the item text is that sentence with the citation removed, and IS 15622 is the answer.
+  An item citing several standards (a pipe and its gasket) keeps all of them, and any one counts as a
+  hit. A bare number BIS has since split into parts resolves to all the parts; a withdrawn standard
+  resolves to its replacement.
+- **Every item was read.** 70 were rejected by hand, each with its reason recorded in the script:
+  specification prose, lists of standards, two BOQ items merged by extraction, garbled text,
+  duplicates, test-method-only citations, and citations that cover a constituent rather than the
+  thing procured. A further 17 were rejected by rules for constituent citations that recur across a
+  whole BOQ series (every size of an "HD wire" precast drain, every anodised fitting). The rule is
+  that the citation must cover what the line procures: "precast drain … HD wire to IS 432" would
+  otherwise teach the evaluation that a drain is answered by a wire standard.
+- **Its limits, stated plainly.** 86 items is below the 100 to 200 the plan asks for. Two documents
+  supply 47 of them (an MPAKVN Indore infrastructure estimate with 28, and an MEA works BOQ with 19), and at most two items
+  are kept per gold standard. The domain mix is what public BOQs contain, which is mostly civil,
+  plumbing, water supply, electrical and fire work; furniture, textiles, food and medical supplies
+  are barely represented, because those are procured on GeM whose bid PDFs carry catalogue
+  categories rather than officer-written lines. A tender can also cite loosely (a GI pipe item citing
+  IS 1239 Part 2 where Part 1 is the pipe), and the gold follows the citation regardless.
+- **GeM was tried and rejected as a source.** GeM bid documents pair the buyer's own text with a
+  GeM category, and many categories carry an IS number, which looked ideal. The pairing is GeM's
+  loose notification match, not a label: "Steel reinforcement for R.C.C." was matched to shirts,
+  tricycles and poly-pallets.
+
+The hand-written set stays as a regression guard, and the two are reported side by side in section
+7. Growing the real set is still the highest-value next task: more BOQ sources in the thin domains,
+and GeM's own bid-level technical specification attachments where they carry officer-written text.
+The same corpus doubles as the strongest vocabulary source available, since the words around
+"conforming to IS xxxx" are the procurement officer's own phrasing for that standard.
 
 ---
 
@@ -818,8 +1086,12 @@ first comma or preposition beats a parser's first noun chunk on this input shape
 | `04_ablate_vocabulary.py` | rebuilds the corpus with each vocabulary source off and re-measures |
 | `05_mine_gazetteers.py` | mines material, property and environment vocabulary from the corpus |
 | `06_calibrate_tiers.py` | fits the relevance-tier thresholds to the evaluation set |
+| `07_merge_preview_metadata.py` | folds preview reaffirmation years and ICS codes into `standards.csv` |
+| `08_export_normative_refs.py` | writes clause 2 normative references as a graph edge list |
+| `09_build_tender_eval.py` | builds the real-tender evaluation set from public BOQ PDFs |
 | `is_advisor/config.py` | paths, model names, all retrieval and boost constants |
 | `is_advisor/corpus.py` | index selection, text cleaning, mined past-edition vocabulary |
+| `is_advisor/wordsplit.py` | re-inserts spaces PDF extraction lost ("testingandcommissioning") |
 | `is_advisor/query.py` | specification blocks, splitting, heading detection, boilerplate, citations |
 | `is_advisor/requirements.py` | product, material, quantities, environment and properties |
 | `is_advisor/gazetteer.py` | loading and longest-match lookup for the mined vocabularies |
@@ -828,8 +1100,14 @@ first comma or preposition beats a parser's first noun chunk on this input shape
 | `is_advisor/dense.py` | bi-encoder embeddings, FAISS with numpy fallback, text fingerprinting |
 | `is_advisor/rerank.py` | cross-encoder |
 | `is_advisor/search.py` | fusion, boosts, citation resolution, output contract |
+| `bis_scope_scraper.py` | fetches clause 1 and 2 from BSB Edge preview pages into `data/scope_text.csv` |
+| `data/scope_text.csv` | scraped scope text, normative references, ICS codes, per-row quality status |
+| `data/SCOPE_TEXT.md` | how scope text was collected, its coverage, and the integration plan |
 | `data/aliases.csv` | 57 curated trade-name rows, all verified against the index |
-| `data/eval_set.jsonl` | 121 evaluation line items, all gold answers verified |
+| `data/eval_set.jsonl` | 121 hand-written evaluation line items, all gold answers verified |
+| `data/eval_tenders.jsonl` | 86 real tender BOQ lines with source URL and verbatim text |
+| `data/tender_sources.txt` | the tender PDFs the real set is built from |
+| `data/normative_refs_edges.csv`, `data/NORMATIVE_REFS.md` | clause 2 edges and the handoff note for the graph workstream |
 | `data/gazetteers/` | generated attribute vocabularies, plus hand-maintained `*_manual.txt` |
 | `data/sample_tender.txt` | demo tender exercising splitting, citations and a withdrawn standard |
 | `data/sample_tender_hi.txt` | the same shape in Hindi: numbered items, a citation, a `Key: value` block, and the caseless-heading limit from section 14 |
@@ -906,11 +1184,17 @@ boilerplate stripping never eats a word out of a product description.
 
 ## 13. Known limits and what comes next
 
-- **No scope text.** Clause 1 of each standard lives only in the BIS PDFs. Everything here works
-  around its absence, and it remains the quality ceiling. `pdf_download_id` is populated for almost
-  all new records, so extraction is the single biggest upgrade available, and section 7 shows
-  exactly which failures it would fix.
-- **The evaluation set is hand-written.** Section 8. This is the highest-value next task.
+- **Scope text covers 48% of the index, and that is close to its ceiling.** 11,280 standards have
+  usable clause 1 text from the BSB Edge previews. Adopted IS/ISO and IS/IEC standards will not get
+  it from this source, because their preview carries only the National Foreword, so the adoption-
+  heavy families (IS 1367, IS 13730) stay title-only. The separate scope keyword index measured
+  negative at equal weight and is off (section 7); a down-weighted version is untried.
+- **The real-tender evaluation set is small.** 86 items from 17 documents, skewed to civil and
+  plumbing work (section 8). It is the number to quote, and growing it is still the highest-value
+  next task.
+- **Run-together PDF text is only partly repaired.** A third of real tender lines lose their spaces
+  in extraction. Word splitting lifts those from 0.464 to 0.536 Recall@5 (section 7), still below
+  clean lines; runs mixing letters and numbers ("with600mmx600mm") are left alone.
 - **Under-splitting.** Prose hiding three products in one paragraph is treated as one item. The
   rules handle bullets, numbering and table rows; they cannot handle a run-on sentence.
 - **Aliases cover 57 standards** of 23,341. They exist to make demo-critical products reliable, not
@@ -919,7 +1203,8 @@ boilerplate stripping never eats a word out of a product description.
   text, and a reranker trained for short documents is worth trying.
 - **Requirements do not reach the ranking.** They are extracted, displayed and returned, but the one
   attempt to turn them into a ranking signal measured flat and was removed (section 7). Scope text
-  is what would change this, not a better boost.
+  now exists for 48% of the index, so matching requirements against it is the next thing to try,
+  not a better boost over titles.
 - **Product-name extraction is a head-phrase heuristic**, not a parser. It handles procurement
   phrasing well and will mislabel unusual sentence shapes. It is shown to the user precisely so a
   wrong reading is visible rather than silent.
@@ -1086,6 +1371,14 @@ real: its title line "निविदा सूचना - जल आपूर�
 rather than dropped as a heading, because `is_heading` recognises a heading by capitalisation and
 Devanagari has no capitals. It returns tap and plug-cock standards, which is visible nonsense rather
 than silent nonsense.
+
+### Which encoder a line uses
+
+Retrieval keeps two dense indexes over the same text and picks one per line: the English encoder
+for anything whose search text is Latin script (English, translated, romanised), the multilingual
+encoder for a line still mostly in another script. Translation is the main path; the multilingual
+encoder is the safety net for when it is off, not downloaded, or fails. Section 7 has the numbers
+behind that split.
 
 ### Cost
 

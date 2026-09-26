@@ -24,7 +24,10 @@ a rule that would misfire on real items.
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass, field
+
+from .wordsplit import split_run_together
 
 # "IS 1786", "IS 1786:2008", "IS 2911 (Part 1)", "IS/ISO 9001:2015", "IS 1234 Part 2"
 IS_NUMBER_RE = re.compile(
@@ -166,11 +169,21 @@ def strip_boilerplate(text: str, drop_citations: bool = True) -> str:
     elsewhere, and their digits only add noise to the semantic query."""
     if drop_citations:
         text = IS_NUMBER_RE.sub(" ", text)
+    # After citations are gone (so "IS13920" is never split into words) and
+    # before boilerplate, whose patterns need the spaces PDF extraction lost.
+    text = split_run_together(text)
     text = _ROW_INDEX_RE.sub(" ", text)
     text = _BOILERPLATE_RE.sub(" ", text)
     text = _UNIT_RE.sub(" ", text)
     text = re.sub(r"[\d,]{4,}", " ", text)          # bare quantities and prices
-    text = re.sub(r"[^\w\s()/&.+-]", " ", text)
+    # Combining marks survive: Python does not count Indic vowel signs as \w,
+    # so the plain class turned an untranslated "आरसीसी कार्य" into "आरस स क र य"
+    # (the same trap lexical.py's tokenizer documents). ASCII text is unaffected.
+    text = "".join(
+        ch if (ch.isalnum() or ch.isspace() or ch in "()/&.+-_" or unicodedata.category(ch).startswith("M"))
+        else " "
+        for ch in text
+    )
     text = _WS_RE.sub(" ", text)
     return text.strip(" .,-:;/")
 

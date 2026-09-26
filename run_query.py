@@ -31,7 +31,7 @@ for _stream in (sys.stdout, sys.stderr):
         pass
 
 from rag.metadata_store import MetadataStore
-from rag.kg_client import Neo4jKGClient
+from rag.kg_client import get_kg_client
 from rag.llm_client import get_llm_client
 from rag.pipeline import run_query
 from rag.retriever_factory import get_retriever
@@ -53,7 +53,7 @@ def main() -> None:
 
     store = MetadataStore()
     retriever = get_retriever(store)
-    kg = Neo4jKGClient.from_env()
+    kg = get_kg_client()
     llm = get_llm_client()
 
     # One sentence, once, instead of a notification block per missing label and
