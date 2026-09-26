@@ -52,25 +52,25 @@ export function Settings() {
       </SectionCard>
 
       <SectionCard title={t("settings.language")}>
-        <div className="flex gap-2">
-          {SUPPORTED_LANGUAGES.map((lang) => (
-            <button
-              key={lang.code}
-              type="button"
-              onClick={() => {
-                i18n.changeLanguage(lang.code);
-                persistLanguage(lang.code as LanguageCode);
-              }}
-              className={`flex-1 rounded-xl border px-4 py-3 text-sm font-medium transition-colors ${
-                i18n.language === lang.code
-                  ? "border-accent-primary bg-accent-primary/10 text-accent-primary"
-                  : "border-border text-text-secondary hover:border-border-strong"
-              }`}
-            >
-              {lang.label}
-            </button>
-          ))}
-        </div>
+        <label className="flex flex-col gap-2 text-sm text-text-secondary" htmlFor="settings-language">
+          <span className="sr-only">{t("settings.language")}</span>
+          <select
+            id="settings-language"
+            value={i18n.language}
+            onChange={(event) => {
+              const code = event.target.value as LanguageCode;
+              i18n.changeLanguage(code);
+              persistLanguage(code);
+            }}
+            className="w-full rounded-xl border border-border bg-surface px-4 py-3 text-sm font-medium text-text-primary outline-none transition-colors focus:border-accent-primary"
+          >
+            {SUPPORTED_LANGUAGES.map((lang) => (
+              <option key={lang.code} value={lang.code}>
+                {lang.label}
+              </option>
+            ))}
+          </select>
+        </label>
       </SectionCard>
 
       <SectionCard title={t("settings.preferences")}>
