@@ -7,6 +7,7 @@ import { Analyze } from "./pages/Analyze";
 import { Results } from "./pages/Results";
 import { Settings } from "./pages/Settings";
 import { EntryPoint } from "./pages/EntryPoint";
+import { About } from "./pages/About";
 
 function App() {
   return (

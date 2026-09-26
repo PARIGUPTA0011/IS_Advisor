@@ -1,6 +1,6 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { Clock3, LayoutGrid, Search, Settings as SettingsIcon } from "lucide-react";
+import { CircleHelp, Clock3, LayoutGrid, Search, Settings as SettingsIcon } from "lucide-react";
 import { Logo } from "./Logo";
 import { ThemeToggle } from "./ThemeToggle";
 import { LanguageSwitcher } from "./LanguageSwitcher";

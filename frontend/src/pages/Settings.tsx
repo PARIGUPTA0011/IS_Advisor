@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { Info, Monitor, Moon, Sun } from "lucide-react";
+import { Minus, Monitor, Moon, Plus, Sun } from "lucide-react";
 import { useTheme, type ThemePreference } from "../contexts/ThemeContext";
 import { useAnalysisPrefs } from "../contexts/AnalysisPrefsContext";
 import { useHealth } from "../hooks/useHealth";

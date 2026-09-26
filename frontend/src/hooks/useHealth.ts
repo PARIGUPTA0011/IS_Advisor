@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { getHealth } from "../api/health";
 import type { HealthResponse } from "../types/api";
 
@@ -8,31 +8,22 @@ export function useHealth(pollMs = 30000) {
   const [status, setStatus] = useState<Status>("loading");
   const [data, setData] = useState<HealthResponse | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function check() {
-      try {
-        const result = await getHealth();
-        if (!cancelled) {
-          setData(result);
-          setStatus("online");
-        }
-      } catch {
-        if (!cancelled) {
-          setStatus("offline");
-          setData(null);
-        }
-      }
+  const checkHealth = useCallback(async () => {
+    try {
+      const result = await getHealth();
+      setData(result);
+      setStatus("online");
+    } catch {
+      setData(null);
+      setStatus("offline");
     }
+  }, []);
 
-    check();
-    const interval = setInterval(check, pollMs);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [pollMs]);
+  useEffect(() => {
+    void checkHealth();
+    const interval = setInterval(() => void checkHealth(), pollMs);
+    return () => clearInterval(interval);
+  }, [checkHealth, pollMs]);
 
-  return { status, data };
+  return { status, data, retry: checkHealth };
 }
