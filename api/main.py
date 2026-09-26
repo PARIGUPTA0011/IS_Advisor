@@ -16,7 +16,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-from rag.kg_client import Neo4jKGClient
+from rag.kg_client import get_kg_client
 from rag.llm_client import get_llm_client
 from rag.metadata_store import MetadataStore
 from rag.pipeline import run_query
@@ -33,7 +33,7 @@ async def lifespan(app: FastAPI):
     store = MetadataStore()
     app_state["store"] = store
     app_state["retriever"] = get_retriever(store)
-    app_state["kg"] = Neo4jKGClient.from_env()
+    app_state["kg"] = get_kg_client()
     app_state["llm"] = get_llm_client()
     yield
     app_state["kg"].close()

@@ -26,6 +26,9 @@ REFERENCES = "REFERENCES"
 REFERENCED_BY = "REFERENCED_BY"
 REPLACED_BY = "REPLACED_BY"
 REPLACES = "REPLACES"
+# Clause 2 normative references, loaded by Knowlege_Graph/07. Stated by the
+# standard itself, so kept apart from the scraped REFERENCES edges.
+NORMATIVELY_REFERENCES = "NORMATIVELY_REFERENCES"
 
 _QUERY = """
 MATCH (s:Standard {kys_id: $kys_id})
@@ -45,7 +48,11 @@ CALL (s) {
     MATCH (s)<-[:REPLACED_BY]-(t:Standard)
     RETURN collect(DISTINCT {kys_id: t.kys_id, is_number: t.is_number, title: t.title}) AS replaces
 }
-RETURN refs, ref_by, replaced_by, replaces
+CALL (s) {
+    OPTIONAL MATCH (s)-[:NORMATIVELY_REFERENCES]->(t:Standard)
+    RETURN collect(DISTINCT {kys_id: t.kys_id, is_number: t.is_number, title: t.title}) AS normative
+}
+RETURN refs, ref_by, replaced_by, replaces, normative
 """
 
 
@@ -98,4 +105,29 @@ class Neo4jKGClient:
         related += _to_related(record["ref_by"], REFERENCED_BY)
         related += _to_related(record["replaced_by"], REPLACED_BY)
         related += _to_related(record["replaces"], REPLACES)
+        related += _to_related(record["normative"], NORMATIVELY_REFERENCES)
         return related
+
+
+def get_kg_client() -> KGClient:
+    """Neo4j when it is configured and reachable, the local CSV graph otherwise.
+
+    Both answer get_relationships() from the same data and rules, so the
+    pipeline behaves the same either way; only Neo4j needs the network.
+    Set KG_BACKEND=local to force the offline graph (for a demo), or
+    KG_BACKEND=neo4j to fail loudly instead of falling back.
+    """
+    load_dotenv()
+    backend = os.getenv("KG_BACKEND", "auto").lower()
+    if backend != "local":
+        try:
+            client = Neo4jKGClient.from_env()
+            client._driver.verify_connectivity()
+            return client
+        except Exception as exc:
+            if backend == "neo4j":
+                raise
+            print(f"Neo4j unavailable ({exc.__class__.__name__}); using the local CSV graph.")
+    from rag.local_kg_client import LocalKGClient
+
+    return LocalKGClient()
