@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { BookOpen, Clock3, Trash2 } from "lucide-react";
+import { Clock3, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import type { RecommendResponse } from "../types/api";
 
@@ -29,32 +29,18 @@ function relativeTime(timestamp: string) {
   return `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
-export function EntryPoint({ kind }: { kind: "history" | "library" }) {
-  const history = kind === "history";
+export function EntryPoint() {
   const navigate = useNavigate();
   const [entries, setEntries] = useState<HistoryEntry[]>([]);
 
   useEffect(() => {
-    if (history) setEntries(readHistory());
-  }, [history]);
+    setEntries(readHistory());
+  }, []);
 
   const clearHistory = () => {
     window.localStorage.removeItem(HISTORY_KEY);
     setEntries([]);
   };
-
-  if (!history) {
-    return (
-      <section className="mx-auto max-w-5xl px-4 py-12 md:px-8">
-        <div className="rounded-3xl border border-border bg-bg-elevated p-8 shadow-[var(--shadow-card)]">
-          <div className="flex size-12 items-center justify-center rounded-2xl bg-accent-primary/10 text-accent-primary"><BookOpen size={24} /></div>
-          <p className="mt-6 text-xs font-semibold uppercase tracking-[0.18em] text-accent-primary">Standards library</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-text-primary">Browse Indian Standards</h1>
-          <p className="mt-3 max-w-xl text-sm leading-6 text-text-secondary">Explore the 35,524-standard corpus and discover connected requirements.</p>
-        </div>
-      </section>
-    );
-  }
 
   return (
     <section className="mx-auto max-w-5xl px-4 py-12 md:px-8">

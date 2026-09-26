@@ -18,8 +18,7 @@ function App() {
               <Route index element={<Dashboard />} />
               <Route path="analyze" element={<Analyze />} />
               <Route path="results" element={<Results />} />
-              <Route path="history" element={<EntryPoint kind="history" />} />
-              <Route path="library" element={<EntryPoint kind="library" />} />
+              <Route path="history" element={<EntryPoint />} />
               <Route path="settings" element={<Settings />} />
             </Route>
           </Routes>
