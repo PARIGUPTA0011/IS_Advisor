@@ -1,4 +1,4 @@
-"""Hybrid retrieval: BM25 + dense, fused, boosted, optionally reranked.
+"""Hybrid retrieval: BM25 + dense + scope BM25, fused, boosted, optionally reranked.
 
 This module is the end of the semantic search workstream. It returns a ranked
 list of candidate standards and stops there - allied standards, replacement
@@ -101,7 +101,7 @@ def _combine(relevance: float, boost: float) -> float:
 
 
 class Retriever:
-    """Owns the corpus and both indexes; one instance serves many queries."""
+    """Owns the corpus and the indexes; one instance serves many queries."""
 
     def __init__(
         self,
@@ -112,16 +112,26 @@ class Retriever:
         cross_encoder=None,
         lookup_df: pd.DataFrame | None = None,
         nlp=None,
+        scope_bm25: BM25Index | None = None,
     ):
         self.corpus = corpus_df.reset_index(drop=True)
         self.bm25 = bm25
+        # A separate keyword index over clause 1 scope text alone. It covers
+        # only the standards that have a usable scope, so its row positions are
+        # its own and are mapped back to the corpus through kys_id.
+        self.scope_bm25 = scope_bm25
+        self._pos_by_kys = {int(k): i for i, k in enumerate(self.corpus["kys_id"])}
         self.dense = dense
         self.encoder = encoder
         self.cross_encoder = cross_encoder
         self.nlp = nlp
         self.lookup = lookup_df
         self._by_base = {b: i for i, b in enumerate(self.corpus["is_base_id"])}
-        self._doc_tokens = [set(tokenize(t)) for t in self.corpus["doc_text"]]
+        # What the keyword index actually matched against; doc_text now carries
+        # scope text, which would name words the keyword side never saw.
+        self._doc_tokens = [set(tokenize(t)) for t in self.corpus["lexical_text"]]
+        scope_col = self.corpus["scope_text"] if "scope_text" in self.corpus else [""] * len(self.corpus)
+        self._scope_tokens = [set(tokenize(t)) for t in scope_col]
 
     # ---------------- retrieval ----------------
 
@@ -150,10 +160,13 @@ class Retriever:
             )
         return boost, reasons
 
-    def _overlap_reason(self, row_pos: int, query_text: str) -> str:
+    def _overlap_reason(self, row_pos: int, query_text: str, scope: bool = False) -> str:
         """Name the query words that actually hit the document, for the `why` field."""
-        hits = [t for t in dict.fromkeys(tokenize(query_text)) if t in self._doc_tokens[row_pos]]
-        return "matched " + ", ".join(hits[:4]) if hits else ""
+        vocab = self._scope_tokens[row_pos] if scope else self._doc_tokens[row_pos]
+        hits = [t for t in dict.fromkeys(tokenize(query_text)) if t in vocab]
+        if not hits:
+            return ""
+        return ("scope mentions " if scope else "matched ") + ", ".join(hits[:4])
 
     def retrieve(
         self,
@@ -162,6 +175,7 @@ class Retriever:
         use_reranker: bool = config.USE_RERANKER,
         use_bm25: bool = True,
         use_dense: bool = True,
+        use_scope: bool = config.USE_SCOPE_RETRIEVER,
     ) -> list[Candidate]:
         """Rank the index against one already-cleaned line item.
 
@@ -184,6 +198,18 @@ class Retriever:
                 fused[pos] = fused.get(pos, 0.0) + _rrf(rank)
                 sources.setdefault(pos, []).append("semantic")
 
+        # Third list for RRF. A standard without scope text is simply absent
+        # here, which costs it nothing it had before (SCOPE_TEXT.md section 4).
+        has_scope = use_scope and self.scope_bm25 is not None
+        if has_scope:
+            hits = self.scope_bm25.search(text, config.SCOPE_TOP_K)
+            for rank, (scope_pos, _score) in enumerate(hits):
+                pos = self._pos_by_kys.get(int(self.scope_bm25.kys_ids[scope_pos]))
+                if pos is None:
+                    continue
+                fused[pos] = fused.get(pos, 0.0) + _rrf(rank)
+                sources.setdefault(pos, []).append("scope")
+
         if not fused:
             return []
 
@@ -202,7 +228,9 @@ class Retriever:
             # score seen. Dividing by the observed maximum pins the top hit at
             # 1.000 on every query, which reads as certainty the ranking does
             # not have.
-            n_retrievers = int(use_bm25) + int(use_dense and self.dense is not None)
+            n_retrievers = (
+                int(use_bm25) + int(use_dense and self.dense is not None) + int(has_scope)
+            )
             ceiling = max(n_retrievers, 1) * _rrf(0)
             base = np.array([s / ceiling for _, s in ordered], dtype="float32")
 
@@ -215,6 +243,8 @@ class Retriever:
                 why_parts.append(self._overlap_reason(pos, text))
             if "semantic" in sources.get(pos, []):
                 why_parts.append("semantically similar title")
+            if "scope" in sources.get(pos, []):
+                why_parts.append(self._overlap_reason(pos, text, scope=True))
             why_parts.extend(boost_reasons)
             scored.append(
                 Candidate(
@@ -392,6 +422,9 @@ def load_retriever(
     corpus_df = pd.read_parquet(config.CORPUS_PARQUET)
     lookup_df = pd.read_parquet(config.LOOKUP_PARQUET) if config.LOOKUP_PARQUET.exists() else None
     bm25 = BM25Index.load()
+    scope_bm25 = (
+        BM25Index.load(config.SCOPE_BM25_PICKLE) if config.SCOPE_BM25_PICKLE.exists() else None
+    )
 
     dense = encoder = cross = None
     if with_dense and config.EMBEDDINGS_NPY.exists():
@@ -417,4 +450,4 @@ def load_retriever(
         except Exception:
             cross = None
     nlp = query_mod.load_spacy() if with_spacy else None
-    return Retriever(corpus_df, bm25, dense, encoder, cross, lookup_df, nlp)
+    return Retriever(corpus_df, bm25, dense, encoder, cross, lookup_df, nlp, scope_bm25)

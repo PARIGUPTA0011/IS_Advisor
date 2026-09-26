@@ -19,10 +19,19 @@ LOOKUP_PARQUET = ARTIFACTS / "lookup.parquet"
 EMBEDDINGS_NPY = ARTIFACTS / "embeddings.npy"
 FAISS_INDEX = ARTIFACTS / "index.faiss"
 BM25_PICKLE = ARTIFACTS / "bm25.pkl"
+SCOPE_BM25_PICKLE = ARTIFACTS / "bm25_scope.pkl"
 INDEX_META = ARTIFACTS / "index_meta.json"
 
 CURATED_ALIASES = WORK_DIR / "data" / "aliases.csv"
-EVAL_SET = WORK_DIR / "data" / "eval_set.jsonl"
+EVAL_SET = WORK_DIR / "data" / "eval_set.jsonl"            # hand-written, see README section 8
+EVAL_TENDERS = WORK_DIR / "data" / "eval_tenders.jsonl"    # real tender BOQ lines, 09_build_tender_eval.py
+
+# Clause 1 (Scope) from the BSB Edge preview pages, see data/SCOPE_TEXT.md.
+# Only `ok` rows are used, and of those only rows whose scope repeats enough of
+# the title's content words: below 0.35 is where bad OCR and mis-scraped pages
+# concentrate (SCOPE_TEXT.md section 2).
+SCOPE_TEXT_CSV = WORK_DIR / "data" / "scope_text.csv"
+SCOPE_MIN_TITLE_OVERLAP = 0.35
 
 # --- models (all run locally on CPU; downloaded once, then cached) ---
 # bge-small is 384-dim and asymmetric-friendly, which matters because our
@@ -34,6 +43,7 @@ CROSS_ENCODER = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 # --- retrieval knobs ---
 DENSE_TOP_K = 50          # candidates pulled from the vector index per line item
 BM25_TOP_K = 50           # candidates pulled from the lexical index per line item
+SCOPE_TOP_K = 50          # candidates pulled from the scope-text index per line item
 FUSION_TOP_K = 50         # size of the fused list handed to the cross-encoder
 RRF_K = 60                # reciprocal-rank-fusion damping constant
 FINAL_TOP_K = 10
@@ -42,6 +52,13 @@ FINAL_TOP_K = 10
 # lowers Recall@5 on the current evaluation set. Turn it on to re-measure
 # once the evaluation set is replaced with real tender lines.
 USE_RERANKER = False
+
+# The scope-text BM25 is built and available as a third RRF list but off by
+# default: at equal weight it dropped Recall@5 from 0.909 to 0.736, because it
+# covers under half the index and lifts every covered standard it matches.
+# Scope text still reaches the ranking through the embedded text, which is
+# where it measured as a win. See README section 7.
+USE_SCOPE_RETRIEVER = False
 
 # --- metadata boosts (trap 2: boosts, never hard filters) ---
 BOOST_PRODUCT_SPEC = 0.06       # procurement asks for products, not test methods
@@ -70,4 +87,4 @@ TIER_HIGH = "Highly relevant"
 TIER_RELATED = "Related"
 TIER_POSSIBLE = "Possibly relevant"
 TIER_HIGH_MIN = 0.96
-TIER_RELATED_MIN = 0.84
+TIER_RELATED_MIN = 0.81

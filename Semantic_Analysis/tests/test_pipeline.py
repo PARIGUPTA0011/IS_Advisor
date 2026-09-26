@@ -334,6 +334,20 @@ def test_source_encoding_damage_normalised() -> None:
     check("lowercase IS prefix fixed", corpus.load_standards()["is_number"].str.match(r"^Is\b").sum(), 0)
 
 
+def test_run_together_text_is_split() -> None:
+    """A third of real tender lines lose their spaces in PDF extraction."""
+    from is_advisor.wordsplit import split_run_together
+
+    check("glued BOQ text split",
+          split_run_together("Supplying,installing,testingandcommissioningofGIpipes"),
+          "Supplying, installing, testing and commissioning of gi pipes")
+    # Misspellings used to shatter into fragments ("treat em ent") and cost recall.
+    check("misspelling left alone", split_run_together("treatement construcion"), "treatement construcion")
+    clean = "Cross linked polyethylene insulated XLPE power cables, polyvinylchloride sheath"
+    check("clean text untouched", split_run_together(clean), clean)
+    check("citation not split into words", "13920" in query.strip_boilerplate("bars as perIS13920 grade"), False)
+
+
 def main() -> int:
     for name, func in sorted(globals().items()):
         if name.startswith("test_") and callable(func):

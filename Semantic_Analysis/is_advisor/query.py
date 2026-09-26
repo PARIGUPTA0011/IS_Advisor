@@ -9,6 +9,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from .wordsplit import split_run_together
+
 # "IS 1786", "IS 1786:2008", "IS 2911 (Part 1)", "IS/ISO 9001:2015", "IS 1234 Part 2"
 IS_NUMBER_RE = re.compile(
     r"\bIS(?:\s*/\s*(?:ISO|IEC|TS|TR|QC|EN))*\s*[:.]?\s*"
@@ -143,6 +145,9 @@ def strip_boilerplate(text: str, drop_citations: bool = True) -> str:
     elsewhere, and their digits only add noise to the semantic query."""
     if drop_citations:
         text = IS_NUMBER_RE.sub(" ", text)
+    # After citations are gone (so "IS13920" is never split into words) and
+    # before boilerplate, whose patterns need the spaces PDF extraction lost.
+    text = split_run_together(text)
     text = _ROW_INDEX_RE.sub(" ", text)
     text = _BOILERPLATE_RE.sub(" ", text)
     text = _UNIT_RE.sub(" ", text)
