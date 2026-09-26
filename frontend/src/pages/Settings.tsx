@@ -66,7 +66,7 @@ export function Settings() {
               className="w-full rounded-xl border border-border bg-surface px-4 py-3 text-sm font-medium text-text-primary outline-none transition-colors focus:border-accent-primary"
             >
               {SUPPORTED_LANGUAGES.map((lang) => (
-                <option key={lang.code} value={lang.code}>{lang.label}{lang.code !== "en" && " · beta"}</option>
+                <option key={lang.code} value={lang.code}>{lang.label}</option>
               ))}
             </select>
           </div>
