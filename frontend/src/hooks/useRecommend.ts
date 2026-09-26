@@ -18,6 +18,17 @@ export function useRecommend() {
     setState({ status: "loading", data: null, error: null });
     try {
       const data = await recommend({ query, top_k: opts.top_k, language: opts.language });
+      try {
+        const stored = window.localStorage.getItem("is-advisor-history");
+        const history = stored ? (JSON.parse(stored) as Array<{ query: string; timestamp: string; response: RecommendResponse }>) : [];
+        const nextHistory = [
+          { query, timestamp: new Date().toISOString(), response: data },
+          ...history.filter((entry) => entry.query !== query),
+        ].slice(0, 20);
+        window.localStorage.setItem("is-advisor-history", JSON.stringify(nextHistory));
+      } catch {
+        // History is best-effort and must not block a successful recommendation.
+      }
       setState({ status: "success", data, error: null });
       return data;
     } catch (err) {
