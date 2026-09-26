@@ -5,8 +5,9 @@
   },
   "nav": {
     "dashboard": "Dashboard",
-    "analyze": "Analyze Tender",
-    "settings": "Settings"
+  "analyze": "Analyze Tender",
+  "settings": "Settings",
+  "about": "About"
   },
   "dashboard": {
     "heading": "What are you procuring today?",
@@ -81,10 +82,15 @@
     "topK": "Number of recommendations",
     "about": "About IS-Advisor",
     "aboutBody": "IS-Advisor recommends applicable Indian Standards for procurement specifications using hybrid semantic search, a knowledge graph of standard relationships, and an LLM grounded strictly in retrieved evidence.",
-    "systemStatus": "System status",
-    "backendOnline": "Backend online",
-    "backendOffline": "Backend offline",
-    "standardsLoaded": "{{count}} standards loaded"
+  "systemStatus": "System status",
+  "connected": "Connected",
+  "disconnected": "Disconnected",
+  "retryConnection": "Retry connection",
+  "disconnectedHint": "Unable to reach the recommendation service. Check your connection and try again.",
+  "standards": "standards",
+  "backendOnline": "Backend online",
+  "backendOffline": "Backend offline",
+  "standardsLoaded": "{{count}} standards loaded"
   },
   "confidence": {
     "high": "High confidence",

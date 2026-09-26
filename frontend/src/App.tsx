@@ -21,6 +21,7 @@ function App() {
               <Route path="results" element={<Results />} />
               <Route path="history" element={<EntryPoint />} />
               <Route path="settings" element={<Settings />} />
+              <Route path="about" element={<About />} />
             </Route>
           </Routes>
         </BrowserRouter>
