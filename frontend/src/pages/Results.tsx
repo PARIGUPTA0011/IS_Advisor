@@ -21,7 +21,7 @@ export function Results() {
         <EmptyState
           icon={<FileSearch size={28} />}
           title={t("results.noRecommendations")}
-          description="Start a new analysis from the Analyze page."
+          description={t("results.startNewAnalysis")}
           action={
             <button
               type="button"

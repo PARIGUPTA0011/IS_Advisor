@@ -62,7 +62,8 @@
       "Possibly relevant": "Possibly relevant"
     },
     "score": "Match score",
-    "newAnalysis": "New analysis"
+    "newAnalysis": "New analysis",
+    "startNewAnalysis": "Start a new analysis from the Analyze page."
   },
   "settings": {
     "title": "Settings",
@@ -92,6 +93,7 @@
     "generic": "Something went wrong. Please try again.",
     "fileTooLarge": "File exceeds the 25MB limit.",
     "unsupportedFile": "Only PDF and TXT files are supported.",
-    "emptyQuery": "Please describe what you're procuring first."
+    "emptyQuery": "Please describe what you're procuring first.",
+    "retry": "Retry"
   }
 }
