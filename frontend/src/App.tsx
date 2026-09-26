@@ -6,6 +6,7 @@ import { Dashboard } from "./pages/Dashboard";
 import { Analyze } from "./pages/Analyze";
 import { Results } from "./pages/Results";
 import { Settings } from "./pages/Settings";
+import { EntryPoint } from "./pages/EntryPoint";
 
 function App() {
   return (
@@ -17,6 +18,8 @@ function App() {
               <Route index element={<Dashboard />} />
               <Route path="analyze" element={<Analyze />} />
               <Route path="results" element={<Results />} />
+              <Route path="history" element={<EntryPoint kind="history" />} />
+              <Route path="library" element={<EntryPoint kind="library" />} />
               <Route path="settings" element={<Settings />} />
             </Route>
           </Routes>

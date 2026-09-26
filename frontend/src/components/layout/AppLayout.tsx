@@ -1,14 +1,15 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { LayoutGrid, Search, Settings as SettingsIcon } from "lucide-react";
+import { Clock3, Library, LayoutGrid, Search, Settings as SettingsIcon } from "lucide-react";
 import { Logo } from "./Logo";
 import { ThemeToggle } from "./ThemeToggle";
 import { LanguageSwitcher } from "./LanguageSwitcher";
-import { SystemStatusPill } from "./SystemStatusPill";
 
 const NAV_ITEMS = [
   { to: "/", label: "nav.dashboard", icon: LayoutGrid, end: true },
   { to: "/analyze", label: "nav.analyze", icon: Search, end: false },
+  { to: "/history", label: "History", icon: Clock3, end: false },
+  { to: "/library", label: "Standards Library", icon: Library, end: false },
   { to: "/settings", label: "nav.settings", icon: SettingsIcon, end: false },
 ];
 
@@ -41,9 +42,6 @@ export function AppLayout() {
             </NavLink>
           ))}
         </nav>
-        <div className="px-2 pt-4">
-          <SystemStatusPill />
-        </div>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
