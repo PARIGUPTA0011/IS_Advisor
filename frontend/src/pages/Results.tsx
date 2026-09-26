@@ -98,7 +98,7 @@ export function Results() {
           )}
         </div>
 
-        <EvidenceGrid evidence={result.evidence} />
+        <EvidenceGrid evidence={result.evidence} recommendations={result.recommendations} />
       </div>
     </div>
   );
