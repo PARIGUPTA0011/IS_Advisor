@@ -25,6 +25,10 @@ class DirectRecommendation:
     reason: str
     status: str | None = None
     evidence_tag: str | None = None
+    # Filled in after grounding validation when the query was not in English.
+    # `standard_id` is never translated - it is an identifier.
+    reason_localized: str | None = None
+    status_localized: str | None = None
 
 
 @dataclass
@@ -33,15 +37,23 @@ class RelatedStandard:
     relationship: str
     related_to: str
     reason: str | None = None
+    # The relationship name stays in English: the grounding validator matches
+    # it against the knowledge graph's own REFERENCES / REPLACED_BY labels.
+    reason_localized: str | None = None
 
 
 @dataclass
 class RecommendationResponse:
-    query: str
+    query: str                   # as the user typed it, in their language
     direct_recommendations: list[DirectRecommendation] = field(default_factory=list)
     related_standards: list[RelatedStandard] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     confidence: str = "unknown"  # "high" | "medium" | "low" | "insufficient_evidence" | "parse_error"
+    # All three are None/empty for an English query, so nothing about the
+    # English response shape changes.
+    query_english: str | None = None     # what retrieval and the LLM saw
+    language: dict | None = None         # how the language was detected, and which
+    warnings_localized: list[str] = field(default_factory=list)
 
 
 RESPONSE_FORMAT_INSTRUCTIONS = """

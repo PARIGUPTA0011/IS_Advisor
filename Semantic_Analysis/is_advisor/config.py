@@ -25,11 +25,33 @@ CURATED_ALIASES = WORK_DIR / "data" / "aliases.csv"
 EVAL_SET = WORK_DIR / "data" / "eval_set.jsonl"
 
 # --- models (all run locally on CPU; downloaded once, then cached) ---
-# bge-small is 384-dim and asymmetric-friendly, which matters because our
-# documents are ~8-word titles and our queries are paragraphs (trap 4).
-BI_ENCODER = "BAAI/bge-small-en-v1.5"
-BI_ENCODER_QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
+# multilingual-e5-small is 384-dim, so the index keeps the shape and the disk
+# cost it had under bge-small-en-v1.5, and it covers ~100 languages. That
+# second property is what a Hindi or Tamil query needs: the query side is
+# translated to English before retrieval, but a cross-lingual encoder means a
+# term the translation renders differently can still land near the right title,
+# which an English-only encoder cannot do at all.
+#
+# The predecessor was BAAI/bge-small-en-v1.5, with the query prefix
+# "Represent this sentence for searching relevant passages: " and no document
+# prefix. Switching back is those three lines and a rebuild.
+#
+# e5 needs BOTH prefixes, and asymmetrically: "query: " on the query side,
+# "passage: " on the document side. Omitting the document prefix quietly costs
+# retrieval quality, which is why dense.py applies it at encode time rather
+# than baking it into the stored corpus text.
+BI_ENCODER = "intfloat/multilingual-e5-small"
+BI_ENCODER_QUERY_PREFIX = "query: "
+BI_ENCODER_DOC_PREFIX = "passage: "
 CROSS_ENCODER = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+
+# --- multilingual input/output ---
+# Detection and translation live in the repo-root `multilingual` package, which
+# the RAG workstream shares. Off means English-only behaviour, byte for byte.
+MULTILINGUAL = True
+# None auto-detects per line item. Set a FLORES-200 code ("hin_Deva") or an ISO
+# code ("hi") to force both the input and the output language.
+DEFAULT_LANGUAGE = None
 
 # --- retrieval knobs ---
 DENSE_TOP_K = 50          # candidates pulled from the vector index per line item
@@ -69,5 +91,5 @@ MAX_PINNED_PARTS = 3            # cap on parts pinned for a bare cited number
 TIER_HIGH = "Highly relevant"
 TIER_RELATED = "Related"
 TIER_POSSIBLE = "Possibly relevant"
-TIER_HIGH_MIN = 0.96
-TIER_RELATED_MIN = 0.84
+TIER_HIGH_MIN = 0.95
+TIER_RELATED_MIN = 0.68

@@ -14,3 +14,27 @@ numpy==2.5.3
 scikit-learn==1.9.1
 pdfplumber==0.11.10
 # spaCy model: python -m spacy download en_core_web_sm
+
+# multilingual/: language detection, translation, localised output.
+# sentencepiece is what the NLLB and IndicTrans2 tokenizers load their
+# vocabularies with. The version is pinned low deliberately: 0.2.2 segfaults on
+# import under Anaconda Python 3.11.7 on Windows (immediate SIGSEGV, before any
+# of our code runs), and 0.1.99 imports and works on the same machine. Same
+# family of problem as the torch/transformers note in Semantic_Analysis/README
+# section 1.
+sentencepiece==0.1.99
+# Optional, and only consulted for Latin-script text: the script rules decide
+# every non-Latin language on their own, and langdetect is poor at romanised
+# Indic, which is handled before it is asked. Without it, Latin-script
+# non-English detection falls back to small function-word tables.
+langdetect==1.0.9
+#
+# Translation checkpoints are downloaded on first use, not installed:
+#   facebook/nllb-200-distilled-600M          ~2.5 GB, ungated
+#   ai4bharat/indictrans2-indic-en-dist-200M  ~0.9 GB, GATED on HuggingFace
+#   ai4bharat/indictrans2-en-indic-dist-200M  ~0.9 GB, GATED on HuggingFace
+# The IndicTrans2 pair needs a HuggingFace account, the model terms accepted,
+# and HF_TOKEN in the environment. Without a token the layer runs on NLLB and
+# says so in GET /health. IndicTransToolkit (its official preprocessor) needs a
+# C compiler to build and is optional - translate.py falls back to prepending
+# the language tags itself.

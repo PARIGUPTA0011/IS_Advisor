@@ -4,17 +4,22 @@
 
 Given a free-text procurement spec (e.g. *"LED street lights, 90W, 230V AC, outdoor use, IP66"*), this pipeline retrieves candidate Indian Standards, expands them with their Knowledge Graph relationships (references, replacements), hands all of it to an LLM as strict grounding context, and returns a structured recommendation — every claim traceable back to real evidence, with anything the LLM can't support automatically stripped out before it reaches the caller.
 
-It is exposed as a FastAPI endpoint (`POST /recommend`) and is fully working end-to-end **except for one component**: real semantic search. That part is currently a naive keyword-matching placeholder (`MockRetriever`) waiting to be swapped for the actual retriever. Swapping it in requires editing exactly one file — see [Connecting real semantic search](#connecting-real-semantic-search) below.
+It is exposed as a FastAPI endpoint (`POST /recommend`) and is working end-to-end, including real semantic search: `rag/retriever_factory.py` now returns `SemanticRetriever`, the adapter over the hybrid BM25 + dense retriever in `Semantic_Analysis/`. `MockRetriever` is still in the tree as the fallback the pipeline was built against, and it is no longer what runs. See [Semantic search, as connected](#semantic-search-as-connected).
+
+A query may arrive in any of the 22 scheduled Indian languages and the recommendation comes back in that language, with every IS number and official title left in English. See [Multilingual queries](#multilingual-queries) — and note the ordering there, because it is what keeps the grounding validator meaningful.
 
 ---
 
 ## Architecture
 
 ```
-query
+query (any supported language)
   │
   ▼
-Retriever.retrieve(query, top_k)          ← SEMANTIC SEARCH (teammate's component — currently MockRetriever)
+multilingual.prepare_query()               detect language → translate to English → glossary hints
+  │  English query text from here on
+  ▼
+Retriever.retrieve(query, top_k)          ← SEMANTIC SEARCH (SemanticRetriever over Semantic_Analysis/)
   │  list[{kys_id, score, ...}]
   ▼
 hydrate()                                  rag/pipeline.py + rag/metadata_store.py
@@ -38,8 +43,15 @@ parse_response()                           rag/response_parser.py
 validate()                                 rag/grounding_validator.py
   │  strips any recommendation/relationship not actually backed by the evidence
   ▼
+localise_response()                        rag/pipeline.py + multilingual/localize.py
+  │  translates reasons, statuses and warnings; never an IS number
+  ▼
 PipelineResult                             returned by rag/pipeline.py::run_query()
 ```
+
+Everything between `prepare_query` and `localise_response` sees English and only English. That is
+the whole design of the multilingual layer: retrieval, the knowledge graph, the prompt, the LLM and
+the validator all run on exactly the English they were built and tested against.
 
 All of this is orchestrated by **`rag/pipeline.py::run_query()`**, which is the one function that ties every stage together and is what `api/main.py` calls per request.
 
@@ -58,7 +70,8 @@ All of this is orchestrated by **`rag/pipeline.py::run_query()`**, which is the 
 | `llm_client.py` | `LLMClient` protocol with two implementations: `TogetherLLMClient` (default, `Llama-3.3-70B-Instruct-Turbo`) and `AnthropicLLMClient`. Selected via `LLM_PROVIDER` env var. No hardcoded keys — each reads its own env var. |
 | `response_parser.py` | Parses the LLM's raw text into a `RecommendationResponse` (dataclasses: `DirectRecommendation`, `RelatedStandard`, plus `warnings`/`confidence`). **Never raises** — malformed JSON or a schema mismatch becomes `confidence="parse_error"` with the raw text preserved, not a crash. |
 | `grounding_validator.py` | The enforcement layer. The prompt *asks* the LLM to only cite supplied evidence; this module *checks* that it actually did, and rejects (never silently drops) anything that doesn't hold up: an unlisted `standard_id`, a fabricated clause/section citation, or a claimed KG relationship that doesn't exist in the actual graph evidence attached to this query. |
-| `pipeline.py` | `hydrate()`, `expand_with_kg()`, and `run_query()` — the end-to-end orchestrator. Includes a **no-evidence short circuit**: if retrieval returns nothing, the LLM is never called at all (there'd be nothing to ground on, and calling it anyway risks the model falling back on its own training knowledge). Grounding is *enforced*, not just measured — rejected items are stripped from the response before it's returned. |
+| `semantic_retriever.py` | The adapter that satisfies `Retriever` by wrapping `Semantic_Analysis/is_advisor/search.py`. Maps its `Candidate` objects to `RetrievedEvidence`, keeping `kys_id` as the only join key. This is what `get_retriever()` returns. |
+| `pipeline.py` | `hydrate()`, `expand_with_kg()`, `localise_response()`, and `run_query()` — the end-to-end orchestrator. Includes a **no-evidence short circuit**: if retrieval returns nothing, the LLM is never called at all (there'd be nothing to ground on, and calling it anyway risks the model falling back on its own training knowledge). Grounding is *enforced*, not just measured — rejected items are stripped from the response before it's returned. |
 
 ### Why the dataset shape drove these design choices
 
@@ -80,15 +93,17 @@ All of this is orchestrated by **`rag/pipeline.py::run_query()`**, which is the 
 | `llm_client.py` | ✅ Real — Together AI (`Llama-3.3-70B-Instruct-Turbo`, swappable via `LLM_MODEL`) or Anthropic |
 | `response_parser.py`, `grounding_validator.py` | ✅ Real, tested including deliberately hallucinated/malformed inputs |
 | `api/main.py` (FastAPI) | ✅ Real, tested via live HTTP calls |
-| **`mock_retriever.py`** | ⚠️ **Placeholder.** Naive keyword-overlap scorer over titles — not semantic search. Exists only to exercise the rest of the pipeline with real (if noisy) data. |
+| `semantic_retriever.py` | ✅ Real — hybrid BM25 + dense retrieval over the 23,341-document index built by `Semantic_Analysis/01_build_index.py`. This is what `get_retriever()` returns. |
+| `multilingual/` (shared) | ✅ Real — detection and localisation are covered by `tests/test_multilingual.py`, which runs without the translation checkpoints. The better translation model is gated; see [Multilingual queries](#multilingual-queries). |
+| `mock_retriever.py` | Superseded. Kept as the fallback the pipeline was built against, and as the thing the checkpoint tests can run without an index. Not what runs. |
 
-Everything except the retriever has been exercised against **live infrastructure** (a real, populated Neo4j Aura database and a real LLM API), not mocked or simulated.
+Everything has been exercised against **live infrastructure** (a real, populated Neo4j Aura database and a real LLM API), not mocked or simulated.
 
 ---
 
-## Connecting real semantic search
+## Semantic search, as connected
 
-This is the one piece of integration work left. The retrieval teammate needs to touch **exactly one file**.
+This was the one piece of integration work left, and it is done: `retriever_factory.get_retriever()` returns `SemanticRetriever`, which wraps the hybrid retriever in `Semantic_Analysis/`. The contract below is unchanged and is still the only thing this package depends on, which is why the swap touched exactly one file.
 
 ### The contract (`retriever_interface.py`)
 
@@ -104,21 +119,11 @@ Each item in the returned list needs **two required fields**:
 
 Optional, ignored downstream: `matched_text`, `is_number`.
 
-### Steps
+### How it is wired
 
-1. Wrap the real retriever (FAISS/Chroma/whatever vector store + embedding model was used) in a class exposing `.retrieve(query: str, top_k: int) -> list[RetrievedEvidence]`, mapping its internal results back to `kys_id`.
-2. In `rag/retriever_factory.py`, replace:
-   ```python
-   from rag.mock_retriever import MockRetriever
-   return MockRetriever(metadata_store)
-   ```
-   with:
-   ```python
-   from your_module import SemanticRetriever
-   return SemanticRetriever(...)
-   ```
-3. Re-run the checkpoint tests (`tests/test_checkpoint2.py` through `test_checkpoint10.py`). They were originally written against `MockRetriever`, but since they only depend on the `Retriever` protocol, they should keep passing against the real retriever — and immediately reflect real recall/precision instead of keyword-match noise.
-4. Nothing else changes. `hydrate()`, KG expansion, context building, grounding validation, and the FastAPI layer all depend only on `kys_id` and the `Retriever` protocol — never on retriever internals.
+`rag/semantic_retriever.py` puts `Semantic_Analysis/` on `sys.path`, calls `is_advisor.search.load_retriever()` once, and maps each `Candidate` to a `RetrievedEvidence` — `kys_id` and `score` are load-bearing, `matched_text` and `is_number` are carried for traceability only. `hydrate()`, KG expansion, context building, grounding validation and the FastAPI layer depend only on `kys_id` and the `Retriever` protocol, never on retriever internals, so nothing else changed.
+
+The retriever owns its own persisted index, which is why `get_retriever()` discards the `metadata_store` it is handed: the corpus lives in `Semantic_Analysis/artifacts/`, and the RAG layer re-hydrates metadata from `standards.jsonl` itself.
 
 ### What "done" looks like
 
@@ -135,6 +140,39 @@ With `MockRetriever`, the top-5 retrieved standards were:
 0.2390  IS 19517 ...   "Sunglasses and Related Eyewear"                     ← irrelevant
 ```
 The correct standard (`IS 16107 (Part 2/Sec 2):2017`) was tied for the *lowest* score, purely because of generic word overlap ("lights", "use"). The pipeline still got the right answer — the grounding validator and LLM correctly picked it out and rejected the noise — but a real embedding-based retriever should rank it clearly first and likely surface additional genuinely related standards instead of noise.
+
+---
+
+## Multilingual queries
+
+A query in any of the 22 scheduled Indian languages is answered in that language. The layer lives in the repo-root `multilingual/` package, shared with the retrieval workstream, and `multilingual/README.md` is its reference.
+
+**The ordering is the design, and it is not negotiable.** Translation into English happens before retrieval; translation out of English happens *after* `grounding_validator.py` has run. The validator rejects a claim by matching IS numbers and clause patterns in the model's own prose (`_CLAUSE_PATTERN`, `retrieved_ids`), and it cannot do that in a language it was not written for. Translating before it ran would mean validating nothing while appearing to validate everything — so every stage that decides correctness sees English, and only what is displayed is translated.
+
+Three consequences worth stating plainly:
+
+- **The LLM is prompted in English and answers in English.** The evidence block is English, and a model asked to reason in one language about evidence in another paraphrases instead of citing. The translation of its `reason` text happens afterwards, locally.
+- **`standard_id` and `relationship` are never translated.** The first is an identifier; the second (`REFERENCES`, `REPLACED_BY`) is matched against the knowledge graph's own labels.
+- **Localised fields are additive.** For an English query, `language`, `query_english`, `warnings_localized` and every `*_localized` field are null or empty, so an existing client sees exactly the response it saw before.
+
+### Request and response
+
+```bash
+curl -X POST http://localhost:8000/recommend \
+     -H "Content-Type: application/json" \
+     -d '{"query": "90W LED street light IP66", "language": "hi"}'
+```
+
+`language` is optional — omitted, it is detected from the query. Sending it forces both directions, which is also how to ask in English and read the answer in another language.
+
+The response gains `query_english` (what retrieval and the LLM actually saw), `language` (which language, and how it was decided), `warnings_localized`, `detection`, `translation`, and `reason_localized` / `status_localized` on each recommendation.
+
+`GET /languages` lists what is supported, split into `first_class` (the 22 scheduled languages plus English: script detection, curated glossary and labels) and `best_effort` (whatever else the installed NLLB checkpoint carries). `GET /health` now also reports which translation backends actually loaded — worth checking, because **the IndicTrans2 checkpoints are gated on HuggingFace**. Without `HF_TOKEN` and the model terms accepted, the layer falls back to `facebook/nllb-200-distilled-600M` (~2.5 GB, ungated), which is what a fresh install will be running.
+
+```bash
+python run_query.py "90W LED street light IP66" --lang hi
+python run_query.py "आरसीसी कार्य के लिये टीएमटी सरिया Fe500D"
+```
 
 ---
 
@@ -178,7 +216,7 @@ curl -X POST http://localhost:8000/recommend \
      -H "Content-Type: application/json" \
      -d '{"query": "LED street lights, 90W, 230V AC, outdoor use, IP66 protection."}'
 ```
-`GET /health` reports how many standards loaded (`35524` when healthy) — useful to confirm the metadata store came up correctly under FastAPI.
+`GET /health` reports how many standards loaded (`35524` when healthy) — useful to confirm the metadata store came up correctly under FastAPI — plus which translation backends came up.
 
 **Test suite:** `tests/test_checkpoint2.py` through `test_checkpoint10.py` — each corresponds to one build checkpoint (retriever integration, KG expansion, context building, LLM generation, structured output, grounding validation, no-evidence handling, full integration). Run individually, e.g. `python tests/test_checkpoint7.py`.
 
@@ -189,4 +227,5 @@ curl -X POST http://localhost:8000/recommend \
 - **No clause-level text.** The dataset has titles and structured metadata only — no passage/section text — so recommendations are grounded at the whole-standard level, never at a specific clause. This is a data limitation, not a pipeline gap.
 - **`REPLACED_BY` direction matters for correctness, not for validation.** The grounding validator accepts a claimed relationship in either direction (`(A, REPLACED_BY, B)` or `(B, REPLACED_BY, A)`) since relationship phrasing direction isn't load-bearing for the accept/reject decision — but be careful when *displaying* results to users, since getting the arrow backwards (source vs. target) is a real, easy-to-make bug (it happened once during development, in a test script's print statement, not in the pipeline logic itself).
 - **KG relations are capped at 5 per (standard, relationship type)** in the context sent to the LLM, with an explicit "...and N more not shown" note, to avoid bloating the prompt for standards with 30+ edges (some genuinely have this many `REFERENCES`).
+- **A non-English answer is machine translation, and it says so.** The corpus is English (33,803 of 35,524 rows), so a same-language answer is produced rather than looked up. The grounded English text is kept alongside every translated string, and the `language` block on the response records that the translation is machine-produced.
 - **The default LLM is Together AI's `Llama-3.3-70B-Instruct-Turbo`**, not Qwen3, because every Qwen3 variant on the currently configured Together account requires a paid dedicated endpoint (confirmed via live API testing — not a code or key issue). Switching models later is a one-line env var change (`LLM_MODEL=...`), no code change needed.

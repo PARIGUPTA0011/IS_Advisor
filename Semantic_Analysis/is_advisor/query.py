@@ -1,8 +1,25 @@
+
 """Query side: turn a tender document into clean, searchable line items.
 
 Splitting a tender is a structural problem, not a semantic one, so this is all
 rules. Never embed a whole tender as one vector - averaging six products into
 one point in space retrieves none of them.
+
+**Language handling.** Splitting runs on the document as typed, because the
+markers it reads - bullets, newlines, semicolons, pipes, `Key: value` colons -
+are punctuation, and punctuation is shared across scripts. Everything after
+splitting runs on an English translation of each line item, because everything
+after splitting is English-specific: the boilerplate patterns, the citation
+regex, the attribute gazetteers, the spaCy model. So a `LineItem` carries both
+- `raw` as the officer typed it, for display, and `english` for retrieval.
+
+Two rules degrade on scripts without letter case, and they degrade quietly by
+design rather than firing wrongly: `rejoin_wrapped_lines` needs a lowercase
+continuation to join a wrapped line, and `is_heading` needs an all-caps line.
+Indic scripts are caseless, so neither triggers - a wrapped Hindi paragraph
+stays several line items, and a Hindi heading is searched rather than dropped.
+Both are recorded in README section 14 as known limits, not worked around with
+a rule that would misfire on real items.
 """
 from __future__ import annotations
 
@@ -64,13 +81,19 @@ _MIN_ITEM_CHARS = 8
 @dataclass
 class LineItem:
     """One procurement line, plus what the rules managed to pull out of it."""
-    raw: str
-    text: str                      # boilerplate stripped, used for retrieval
+    raw: str                       # as the officer typed it, in their language
+    text: str                      # boilerplate stripped, English, used for retrieval
     cited_is: list[str] = field(default_factory=list)
     keyphrases: list[str] = field(default_factory=list)
     # Key/value pairs when this item came from a specification block. The key
     # already names the field, so downstream extraction needs no inference here.
     pairs: list[tuple[str, str]] = field(default_factory=list)
+    # Language of `raw`, as a FLORES-200 code. English input leaves `english`
+    # equal to `raw` and `translated` False, so nothing about the English path
+    # changes shape.
+    language: str = "eng_Latn"
+    english: str = ""              # `raw` in English, before boilerplate stripping
+    translated: bool = False
 
     def is_empty(self) -> bool:
         return len(self.text) < 3
@@ -155,7 +178,17 @@ def strip_boilerplate(text: str, drop_citations: bool = True) -> str:
 # "Capacity: 200 L" - a labelled attribute, not a procurement line of its own.
 # The value must be non-empty, which is what separates an attribute from a bare
 # heading like "Technical Specification:".
-_KV_LINE_RE = re.compile(r"^\s*([A-Za-z][A-Za-z0-9 /()&.-]{0,30})\s*:\s*(\S.*?)\s*$")
+#
+# The key may be in an Indic script or in Arabic script, so those ranges are
+# added to the ASCII class rather than replacing it: every key the old pattern
+# matched still matches, so English behaviour is unchanged. A block whose keys
+# are not English loses the key-names-the-field shortcut in
+# requirements.py - the pairs are still shown, and the values are still
+# searched, but the fields come from text extraction instead.
+_KV_INDIC = "\u0900-\u0DFF\u0600-\u06FF\u1C50-\u1C7F\uABC0-\uABFF"
+_KV_LINE_RE = re.compile(
+    rf"^\s*([A-Za-z{_KV_INDIC}][A-Za-z0-9 /()&.\-{_KV_INDIC}]{{0,30}})\s*:\s*(\S.*?)\s*$"
+)
 _MIN_KV_BLOCK_LINES = 2
 
 # Keys whose value names the product rather than describing it.
@@ -390,22 +423,101 @@ def is_heading(raw: str, cited: list[str]) -> bool:
     return is_table_header(stripped)
 
 
-def parse_document(document: str, nlp=None) -> list[LineItem]:
-    """Full query-side pass: split, strip, and pull out citations and phrases."""
+def detect_language(document: str, declared: str | None = None):
+    """Detect the document language, or None when the layer is switched off.
+
+    Detection is per *document*, not per line item, and that is a deliberate
+    trade: a three-word line ("GI pipe 25mm") carries almost no language
+    signal, while the tender it came from carries plenty. A genuinely mixed
+    document therefore gets one language for all of its items; the `language`
+    argument overrides it.
+    """
+    from multilingual import detect as detect_module
+
+    return detect_module.detect(document or "", declared=declared)
+
+
+def _to_english(segments: list[Segment], detection, translator=None) -> list[str]:
+    """English text for each segment, in one batched model call.
+
+    Glossary hints are appended for every non-English language, romanised
+    included: "sariya" is in `multilingual/data/glossary.csv` as well as in
+    `data/aliases.csv`, and the hint costs one token if the alias already
+    covered it.
+    """
+    from multilingual import glossary
+    from multilingual.translate import get_translator
+
+    texts = [segment.text for segment in segments]
+    if detection is None or detection.is_english:
+        return texts
+
+    if detection.romanised:
+        # Not translated on purpose - see multilingual/translate.py.
+        return [glossary.augment(text, text, detection.code) for text in texts]
+
+    translator = translator or get_translator()
+    translations = translator.to_english_batch(texts, source=detection.code)
+    return [
+        glossary.augment(translation.text, original, detection.code)
+        for translation, original in zip(translations, texts)
+    ]
+
+
+def parse_document(
+    document: str,
+    nlp=None,
+    language: str | None = None,
+    multilingual: bool | None = None,
+) -> list[LineItem]:
+    """Full query-side pass: split, translate, strip, and pull out citations.
+
+    `language` forces the input language (a FLORES-200 or ISO code); the
+    default detects it. `multilingual=False` restores the English-only path
+    exactly, which is what the evaluation scripts use so that a measurement is
+    never quietly a measurement of the translator.
+    """
+    from . import config
+
+    use_multilingual = config.MULTILINGUAL if multilingual is None else multilingual
+    declared = language or config.DEFAULT_LANGUAGE
+
+    detection = None
+    if use_multilingual:
+        from multilingual.detect import normalise
+
+        # Digits are folded before splitting, because the row-index, quantity
+        # and citation patterns downstream are all ASCII-digit regexes and a
+        # Devanagari "500" would be invisible to every one of them.
+        document = normalise(document)
+        detection = detect_language(document, declared)
+
+    segments = segment_document(document)
+    english_texts = _to_english(segments, detection)
+    language_code = detection.code if detection else "eng_Latn"
+
     items: list[LineItem] = []
-    for segment in segment_document(document):
+    for segment, english in zip(segments, english_texts):
         raw, pairs = segment.text, segment.pairs
-        cited = extract_is_numbers(raw)
-        if not pairs and is_heading(raw, cited):
+        # Citations are read from both renderings: `protect` keeps notation out
+        # of the model's way, but a citation the translation still mangled is
+        # worth catching from the original.
+        cited = extract_is_numbers(english)
+        for base in extract_is_numbers(raw):
+            if base not in cited:
+                cited.append(base)
+        if not pairs and is_heading(english, cited):
             continue
-        text = strip_boilerplate(raw)
+        text = strip_boilerplate(english)
         if len(text) < 3:
             # Nothing left but a citation - still worth resolving that citation.
             if not cited:
                 continue
-            text = raw.strip()
+            text = english.strip()
         items.append(LineItem(
             raw=raw, text=text, cited_is=cited,
             keyphrases=_keyphrases(text, nlp), pairs=pairs,
+            language=language_code, english=english,
+            translated=bool(detection and not detection.is_english and english != raw),
         ))
     return items

@@ -9,6 +9,14 @@ Run locally:
 Then:
     curl -X POST http://localhost:8000/recommend -H "Content-Type: application/json" \
          -d '{"query": "LED street lights, 90W, 230V AC, outdoor use, IP66 protection."}'
+
+A query in any supported language is answered in that language. The language is
+detected from the query unless the request names it:
+
+    curl -X POST http://localhost:8000/recommend -H "Content-Type: application/json" \
+         -d '{"query": "90W LED street light IP66", "language": "hi"}'
+
+GET /languages lists what is supported and how translation is currently wired.
 """
 
 from contextlib import asynccontextmanager
@@ -45,6 +53,9 @@ app = FastAPI(title="IS-Advisor RAG API", lifespan=lifespan)
 class RecommendRequest(BaseModel):
     query: str
     top_k: int = 10
+    # ISO or FLORES-200 code ("hi", "ta", "hin_Deva"). Omitted, the language is
+    # detected from the query and the answer comes back in it.
+    language: str | None = None
 
 
 class RecommendationOut(BaseModel):
@@ -52,6 +63,10 @@ class RecommendationOut(BaseModel):
     status: str | None = None
     reason: str
     evidence_tag: str | None = None
+    # Localised text sits beside the English, never instead of it: standard_id
+    # is an identifier and `reason` is what the grounding validator checked.
+    reason_localized: str | None = None
+    status_localized: str | None = None
 
 
 class RelatedStandardOut(BaseModel):
@@ -59,14 +74,22 @@ class RelatedStandardOut(BaseModel):
     relationship: str
     related_to: str
     reason: str | None = None
+    reason_localized: str | None = None
 
 
 class RecommendResponse(BaseModel):
-    query: str
+    query: str                                   # as sent, in the caller's language
     recommendations: list[RecommendationOut]
     related_standards: list[RelatedStandardOut]
     warnings: list[str]
     confidence: str
+    # All of these are null/empty for an English query, so an existing client
+    # sees exactly the response it saw before.
+    query_english: str | None = None             # what retrieval and the LLM saw
+    language: dict | None = None                 # which language, and how it was decided
+    warnings_localized: list[str] = []
+    detection: dict | None = None
+    translation: dict | None = None
 
 
 @app.post("/recommend", response_model=RecommendResponse)
@@ -78,28 +101,87 @@ def recommend(req: RecommendRequest) -> RecommendResponse:
         kg_client=app_state["kg"],
         llm_client=app_state["llm"],
         top_k=req.top_k,
+        language=req.language,
     )
     response = result.response
     return RecommendResponse(
         query=response.query,
         recommendations=[
             RecommendationOut(
-                standard_id=r.standard_id, status=r.status, reason=r.reason, evidence_tag=r.evidence_tag
+                standard_id=r.standard_id, status=r.status, reason=r.reason,
+                evidence_tag=r.evidence_tag, reason_localized=r.reason_localized,
+                status_localized=r.status_localized,
             )
             for r in response.direct_recommendations
         ],
         related_standards=[
             RelatedStandardOut(
-                standard_id=r.standard_id, relationship=r.relationship, related_to=r.related_to, reason=r.reason
+                standard_id=r.standard_id, relationship=r.relationship,
+                related_to=r.related_to, reason=r.reason,
+                reason_localized=r.reason_localized,
             )
             for r in response.related_standards
         ],
         warnings=response.warnings,
         confidence=response.confidence,
+        query_english=response.query_english,
+        language=response.language,
+        warnings_localized=response.warnings_localized,
+        detection=result.detection,
+        translation=result.translation,
     )
 
 
 @app.get("/health")
 def health() -> dict:
+    from multilingual.translate import get_translator
+
     store: MetadataStore | None = app_state.get("store")
-    return {"status": "ok", "standards_loaded": len(store) if store else 0}
+    # The translation status is in here rather than in a separate endpoint
+    # because "which MT backends actually loaded" is exactly the kind of thing
+    # that silently differs between machines: the IndicTrans2 checkpoints are
+    # gated on HuggingFace, so a deployment without a token falls back to NLLB
+    # and should be able to see that it did.
+    return {
+        "status": "ok",
+        "standards_loaded": len(store) if store else 0,
+        "translation": get_translator().status(),
+    }
+
+
+@app.get("/languages")
+def supported_languages() -> dict:
+    """What can be asked and answered, and how well.
+
+    `first_class` is the 22 scheduled Indian languages plus English: script
+    detection, curated glossary and label coverage, IndicTrans2 when it is
+    available. `best_effort` is everything else the installed NLLB checkpoint
+    carries - detected less reliably, with nothing hand-curated.
+    """
+    from multilingual import languages
+
+    return {
+        "first_class": [
+            {
+                "code": language.code, "name": language.name,
+                "native_name": language.native_name, "script": language.script,
+                "iso": language.iso1 or language.iso3,
+            }
+            for language in languages.ALL
+            if language.tier == languages.TIER_FIRST_CLASS
+        ],
+        "best_effort": [
+            {
+                "code": language.code, "name": language.name,
+                "native_name": language.native_name, "script": language.script,
+                "iso": language.iso1 or language.iso3,
+            }
+            for language in languages.ALL
+            if language.tier == languages.TIER_BEST_EFFORT
+        ],
+        "notes": [
+            "IS numbers and official standard titles are never translated.",
+            "Romanised input (for example \"TMT sariya chahiye\") is detected and "
+            "searched as typed, because the curated trade names already match it.",
+        ],
+    }

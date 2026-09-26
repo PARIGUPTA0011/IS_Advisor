@@ -3,6 +3,13 @@
 This module is the end of the semantic search workstream. It returns a ranked
 list of candidate standards and stops there - allied standards, replacement
 chains and certification live in the knowledge graph workstream.
+
+Retrieval itself is English-only and stays that way: `query.parse_document`
+hands over English line items whatever language they arrived in, so BM25, the
+bi-encoder, the boosts and the citation resolver all see exactly the text they
+were measured on. The only language-aware step here is the last one -
+`_localise` translates what is displayed, after the ranking is decided, and
+never touches an IS number.
 """
 from __future__ import annotations
 
@@ -33,12 +40,20 @@ class Candidate:
     dept_code: str | None = None
     mandatory_cert: bool = False
     tier: str = ""
+    # Present only when the query was not in English. `is_number` and `title`
+    # keep their English values in every case: the number is an identifier and
+    # the title is the standard's legal name, which a tender has to quote as it
+    # stands. The localised strings sit beside them, additively, so an existing
+    # consumer of this contract reads exactly the fields it already read.
+    title_localized: str | None = None
+    why_localized: str | None = None
+    tier_localized: str | None = None
 
     def to_dict(self) -> dict:
         out = asdict(self)
         out["score"] = round(float(self.score), 4)
         out["tier"] = self.tier or tier_for(self.score)
-        return out
+        return {k: v for k, v in out.items() if not (k.endswith("_localized") and v is None)}
 
 
 @dataclass
@@ -54,27 +69,41 @@ class CitedStandard:
     replaced_by_is: str | None = None
     successor_parts: list[str] = field(default_factory=list)
     note: str = ""
+    title_localized: str | None = None
+    note_localized: str | None = None
+    status_localized: str | None = None
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        out = asdict(self)
+        return {k: v for k, v in out.items() if not (k.endswith("_localized") and v is None)}
 
 
 @dataclass
 class ItemResult:
-    line_item: str
-    query_text: str
+    line_item: str                       # as it was typed, in the input language
+    query_text: str                      # English, what retrieval actually ran on
     candidates: list[Candidate] = field(default_factory=list)
     cited_standards: list[CitedStandard] = field(default_factory=list)
     requirements: Requirements | None = None
+    # Both empty/None for an English query, so the contract in README section 9
+    # is unchanged for every existing consumer.
+    line_item_english: str = ""
+    language: dict | None = None
 
     def to_dict(self) -> dict:
-        return {
+        out = {
             "line_item": self.line_item,
             "query_text": self.query_text,
             "requirements": self.requirements.to_dict() if self.requirements else {},
             "candidates": [c.to_dict() for c in self.candidates],
             "cited_standards": [c.to_dict() for c in self.cited_standards],
         }
+        if self.language:
+            # Only present on a non-English query, and it carries how the
+            # language was decided, not just which one it was.
+            out["language"] = self.language
+            out["line_item_english"] = self.line_item_english
+        return out
 
 
 def _rrf(rank: int) -> float:
@@ -321,15 +350,36 @@ class Retriever:
         document: str,
         top_k: int = config.FINAL_TOP_K,
         use_reranker: bool = config.USE_RERANKER,
+        language: str | None = None,
+        multilingual: bool | None = None,
     ) -> list[ItemResult]:
-        """Split a tender, retrieve per line item, and return the KG contract shape."""
+        """Split a tender, retrieve per line item, and return the KG contract shape.
+
+        `language` forces the input and output language; the default detects it
+        from the document. `multilingual=False` is the English-only path, which
+        is what the evaluation scripts pass so a measurement can never quietly
+        become a measurement of the translator.
+        """
         results: list[ItemResult] = []
-        for item in query_mod.parse_document(document, self.nlp):
+        items = query_mod.parse_document(
+            document, self.nlp, language=language, multilingual=multilingual
+        )
+        for item in items:
             # Citations come out first: with them in, "conforming to IS 269"
             # was read as a quantity of 269 tonnes. The fully stripped query
             # cannot be used instead, because it has the units removed too.
+            #
+            # Extraction reads the English rendering, because the quantity
+            # regexes, the unit aliases and the attribute gazetteers are all
+            # English. A translated `Key: value` block loses the
+            # key-names-the-field shortcut - its keys are not English keys - so
+            # the pairs are not passed through and the fields come from the
+            # text instead.
+            source_text = item.english or item.raw
             requirements = extract_requirements(
-                query_mod.strip_citations(item.raw), item.pairs, self.nlp
+                query_mod.strip_citations(source_text),
+                [] if item.translated else item.pairs,
+                self.nlp,
             )
             candidates = self.retrieve(item.text, top_k=top_k, use_reranker=use_reranker)
             cited = [self.resolve_citation(base) for base in item.cited_is]
@@ -365,18 +415,84 @@ class Retriever:
                     candidates=candidates[:top_k],
                     cited_standards=cited,
                     requirements=requirements,
+                    line_item_english=item.english if item.translated else "",
+                    language=None,
                 )
             )
+
+        target = language or (items[0].language if items else None)
+        return _localise(results, target)
+
+
+def _localise(results: list[ItemResult], target: str | None) -> list[ItemResult]:
+    """Translate what is displayed, after the ranking is decided.
+
+    Runs last on purpose. Everything that decides an answer - retrieval,
+    boosts, citation resolution - has already run on English text, so a
+    translation cannot change which standards come back or in what order. It
+    can only change how they read.
+    """
+    if not results:
         return results
+    from multilingual.localize import Localizer
+
+    localizer = Localizer(target)
+    if not localizer.active:
+        return results
+
+    # One model call for every string in the response. See Localizer.prime.
+    pending: list[str | None] = []
+    for result in results:
+        for candidate in result.candidates:
+            pending.extend([candidate.why, candidate.title, candidate.tier or tier_for(candidate.score)])
+        for citation in result.cited_standards:
+            pending.extend([citation.note, citation.title])
+    localizer.prime(pending)
+
+    described = localizer.describe()
+    for result in results:
+        result.language = described
+        for candidate in result.candidates:
+            tier = candidate.tier or tier_for(candidate.score)
+            candidate.tier_localized = localizer.plain_label(tier)
+            candidate.why_localized = localizer.plain(candidate.why)
+            gloss = localizer.title_gloss(candidate.title)
+            candidate.title_localized = gloss.text if gloss else None
+        for citation in result.cited_standards:
+            citation.note_localized = localizer.plain(citation.note) if citation.note else None
+            if citation.status:
+                citation.status_localized = localizer.plain_label(citation.status)
+            gloss = localizer.title_gloss(citation.title)
+            citation.title_localized = gloss.text if gloss else None
+    return results
 
 
 def _embeddings_are_stale(corpus_df: pd.DataFrame) -> bool:
-    """True when the stored vectors no longer describe this corpus."""
+    """True when the stored vectors no longer describe this corpus.
+
+    Two ways they can stop describing it, and both are checked, because both
+    fail silently and produce plausible-looking rankings:
+
+    * the document text changed since the vectors were built (fingerprint), and
+    * the encoder changed since the vectors were built (model name). Switching
+      from an English encoder to a multilingual one leaves a vector file of the
+      right shape and the wrong meaning, and comparing a multilingual query
+      vector against English-encoder document vectors returns confident
+      nonsense. The fingerprint alone cannot see this: the text did not change.
+    """
     if not config.INDEX_META.exists():
         return False        # nothing recorded; assume the build was consistent
     from .dense import fingerprint
 
     meta = json.loads(config.INDEX_META.read_text())
+    stored_model = meta.get("model")
+    if stored_model and stored_model != config.BI_ENCODER:
+        print(
+            f"! embeddings.npy was built with {stored_model}, config now asks for "
+            f"{config.BI_ENCODER}",
+            file=sys.stderr,
+        )
+        return True
     stored = meta.get("embedding_fingerprint")
     if not stored:
         return False
