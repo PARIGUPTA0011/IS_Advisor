@@ -127,9 +127,9 @@ export function Dashboard() {
 
                 <div className="mt-8 grid gap-3 text-left sm:grid-cols-3">
                   {( [
-                    [FileText, "1", "Define your spec", "Describe requirements or upload a tender."],
-                    [BrainCircuit, "2", "Retrieve knowledge", "Search the standards corpus and graph."],
-                    [ArrowRight, "3", "Get recommendations", "Review evidence-backed standards."],
+                    [FileText, "1", t("dashboard.steps.oneTitle"), t("dashboard.steps.oneBody")],
+                    [BrainCircuit, "2", t("dashboard.steps.twoTitle"), t("dashboard.steps.twoBody")],
+                    [ArrowRight, "3", t("dashboard.steps.threeTitle"), t("dashboard.steps.threeBody")],
                   ] as Array<[typeof FileText, string, string, string]>).map(([Icon, step, title, body]) => {
                     const StepIcon = Icon as typeof FileText;
                     return (

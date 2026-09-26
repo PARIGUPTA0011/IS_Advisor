@@ -5,9 +5,10 @@
   },
   "nav": {
     "dashboard": "Dashboard",
-  "analyze": "Analyze Tender",
-  "settings": "Settings",
-  "about": "About"
+    "analyze": "Analyze Tender",
+    "history": "History",
+    "settings": "Settings",
+    "about": "About"
   },
   "dashboard": {
     "heading": "What are you procuring today?",
@@ -70,6 +71,18 @@
     "score": "Match score",
     "newAnalysis": "New analysis",
     "startNewAnalysis": "Start a new analysis from the Analyze page."
+  },
+  "history": {
+    "recentAnalyses": "Recent analyses",
+    "yourHistory": "Your analysis history",
+    "clear": "Clear history",
+    "emptyTitle": "No analyses yet",
+    "emptyBody": "No analyses yet — results from your searches will show up here.",
+    "analyze": "Analyze a tender",
+    "justNow": "just now",
+    "minutesAgo": "{{count}} minute(s) ago",
+    "hoursAgo": "{{count}} hour(s) ago",
+    "daysAgo": "{{count}} day(s) ago"
   },
   "about": {
     "howItWorks": "How it works",

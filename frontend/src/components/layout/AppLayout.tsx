@@ -8,7 +8,7 @@ import { LanguageSwitcher } from "./LanguageSwitcher";
 const NAV_ITEMS = [
   { to: "/", label: "nav.dashboard", icon: LayoutGrid, end: true },
   { to: "/analyze", label: "nav.analyze", icon: Search, end: false },
-  { to: "/history", label: "History", icon: Clock3, end: false },
+  { to: "/history", label: "nav.history", icon: Clock3, end: false },
   { to: "/settings", label: "nav.settings", icon: SettingsIcon, end: false },
   { to: "/about", label: "nav.about", icon: Info, end: false },
 ];
