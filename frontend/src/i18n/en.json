@@ -71,6 +71,18 @@
     "newAnalysis": "New analysis",
     "startNewAnalysis": "Start a new analysis from the Analyze page."
   },
+  "about": {
+    "howItWorks": "How it works",
+    "stepOneTitle": "Describe your need",
+    "stepOne": "Tell us what you are procuring in your own words.",
+    "stepTwoTitle": "Find the right connections",
+    "stepTwo": "See how relevant standards relate to each other.",
+    "stepThreeTitle": "Review grounded recommendations",
+    "stepThree": "Every recommendation is checked against real evidence before it is shown to you.",
+    "standardsIndexed": "Standards Indexed",
+    "targetLanguages": "Target Languages",
+    "projectLine": "IS-Advisor · Standards intelligence for procurement"
+  },
   "settings": {
     "title": "Settings",
     "appearance": "Appearance",
