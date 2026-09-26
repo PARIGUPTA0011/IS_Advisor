@@ -29,6 +29,27 @@ export function Dashboard() {
   return (
     <div className="relative overflow-hidden">
       <div className="chakra-motif" />
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 360 260"
+        className="pointer-events-none absolute -right-20 top-6 hidden h-64 w-90 opacity-[0.16] text-accent-primary sm:block"
+      >
+        <g fill="none" stroke="currentColor" strokeWidth="1">
+          <path d="M28 188 92 126 160 164 218 72 302 112" />
+          <path d="M92 126 116 42 218 72 248 210 302 112" />
+          <path d="M28 188 78 224 248 210" />
+        </g>
+        <g fill="currentColor">
+          <circle cx="28" cy="188" r="4" />
+          <circle cx="78" cy="224" r="3" />
+          <circle cx="92" cy="126" r="5" />
+          <circle cx="116" cy="42" r="4" />
+          <circle cx="160" cy="164" r="3" />
+          <circle cx="218" cy="72" r="5" />
+          <circle cx="248" cy="210" r="4" />
+          <circle cx="302" cy="112" r="5" />
+        </g>
+      </svg>
       <div className="relative mx-auto max-w-3xl px-4 py-16 text-center md:px-8">
         <motion.h1
           initial={{ opacity: 0, y: 8 }}
