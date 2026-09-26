@@ -10,11 +10,11 @@ import { useRecommend } from "../hooks/useRecommend";
 import { useAnalysisPrefs } from "../contexts/AnalysisPrefsContext";
 import { apiLanguageName } from "../i18n";
 
-const EXAMPLES = [
-  "500 LED street lights, 90W, 230V AC, outdoor installation, IP66 protection, minimum luminous efficacy of 120 lm/W.",
-  "Industrial centrifugal water pumps, 50 HP, for municipal water supply.",
-  "Procurement of PVC-insulated electrical cables for indoor wiring, 1100V grade.",
-];
+const EXAMPLE_KEYS = [
+  "analyze.examples.led",
+  "analyze.examples.pumps",
+  "analyze.examples.cables",
+] as const;
 
 type Mode = "text" | "upload";
 
@@ -97,16 +97,19 @@ export function Analyze() {
 
               <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-text-muted">
                 <span>{t("dashboard.tryExample")}:</span>
-                {EXAMPLES.map((ex) => (
-                  <button
-                    key={ex}
-                    type="button"
-                    onClick={() => setQuery(ex)}
-                    className="rounded-full border border-border px-3 py-1 text-accent-primary transition-colors hover:bg-accent-primary/10"
-                  >
-                    {ex.slice(0, 28)}…
-                  </button>
-                ))}
+{EXAMPLE_KEYS.map((key) => {
+                    const example = t(key);
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => setQuery(example)}
+                        className="rounded-full border border-border px-3 py-1 text-accent-primary transition-colors hover:bg-accent-primary/10"
+                      >
+                        {example.slice(0, 28)}…
+                      </button>
+                    );
+                  })}
               </div>
             </motion.div>
           ) : (

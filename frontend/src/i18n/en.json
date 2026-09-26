@@ -30,6 +30,11 @@
     "clear": "Clear",
     "analyzeButton": "Analyze",
     "language": "Response language",
+    "examples": {
+      "led": "500 LED street lights, 90W, 230V AC, outdoor installation, IP66 protection, minimum luminous efficacy of 120 lm/W.",
+      "pumps": "Industrial centrifugal water pumps, 50 HP, for municipal water supply.",
+      "cables": "Procurement of PVC-insulated electrical cables for indoor wiring, 1100V grade."
+    },
     "removeFile": "Remove",
     "extracting": "Extracting text from document...",
     "steps": {
