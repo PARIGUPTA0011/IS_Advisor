@@ -6,6 +6,8 @@ import { Dashboard } from "./pages/Dashboard";
 import { Analyze } from "./pages/Analyze";
 import { Results } from "./pages/Results";
 import { Settings } from "./pages/Settings";
+import { EntryPoint } from "./pages/EntryPoint";
+import { About } from "./pages/About";
 
 function App() {
   return (
@@ -17,7 +19,9 @@ function App() {
               <Route index element={<Dashboard />} />
               <Route path="analyze" element={<Analyze />} />
               <Route path="results" element={<Results />} />
+              <Route path="history" element={<EntryPoint />} />
               <Route path="settings" element={<Settings />} />
+              <Route path="about" element={<About />} />
             </Route>
           </Routes>
         </BrowserRouter>

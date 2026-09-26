@@ -11,22 +11,18 @@ export function ThemeToggle() {
   const { preference, setPreference } = useTheme();
 
   return (
-    <div className="flex items-center gap-0.5 rounded-full border border-border bg-surface-muted p-0.5">
-      {OPTIONS.map(({ value, icon: Icon }) => (
-        <button
-          key={value}
-          type="button"
-          aria-label={`${value} theme`}
-          onClick={() => setPreference(value)}
-          className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors ${
-            preference === value
-              ? "bg-accent-primary text-text-on-primary"
-              : "text-text-muted hover:text-text-primary"
-          }`}
-        >
-          <Icon size={14} strokeWidth={2} />
-        </button>
-      ))}
-    </div>
+    <label className="flex items-center gap-2 rounded-xl border border-border bg-surface-muted px-2.5 py-1.5 text-xs text-text-secondary">
+      <span className="sr-only">Theme</span>
+      <select
+        value={preference}
+        onChange={(event) => setPreference(event.target.value as ThemePreference)}
+        aria-label="Theme"
+        className="bg-transparent font-medium text-text-primary outline-none"
+      >
+        {OPTIONS.map(({ value }) => (
+          <option key={value} value={value}>{value[0].toUpperCase() + value.slice(1)}</option>
+        ))}
+      </select>
+    </label>
   );
 }

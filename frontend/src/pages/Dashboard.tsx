@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowRight, Search, Upload } from "lucide-react";
+import { ArrowRight, BrainCircuit, FileText, Search, Upload } from "lucide-react";
 import { AnalysisProgress } from "../components/analyze/AnalysisProgress";
 import { ErrorState } from "../components/common/ErrorState";
 import { useRecommend } from "../hooks/useRecommend";
@@ -29,6 +29,27 @@ export function Dashboard() {
   return (
     <div className="relative overflow-hidden">
       <div className="chakra-motif" />
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 360 260"
+        className="pointer-events-none absolute -right-20 top-6 hidden h-64 w-90 opacity-[0.16] text-accent-primary sm:block"
+      >
+        <g fill="none" stroke="currentColor" strokeWidth="1">
+          <path d="M28 188 92 126 160 164 218 72 302 112" />
+          <path d="M92 126 116 42 218 72 248 210 302 112" />
+          <path d="M28 188 78 224 248 210" />
+        </g>
+        <g fill="currentColor">
+          <circle cx="28" cy="188" r="4" />
+          <circle cx="78" cy="224" r="3" />
+          <circle cx="92" cy="126" r="5" />
+          <circle cx="116" cy="42" r="4" />
+          <circle cx="160" cy="164" r="3" />
+          <circle cx="218" cy="72" r="5" />
+          <circle cx="248" cy="210" r="4" />
+          <circle cx="302" cy="112" r="5" />
+        </g>
+      </svg>
       <div className="relative mx-auto max-w-3xl px-4 py-16 text-center md:px-8">
         <motion.h1
           initial={{ opacity: 0, y: 8 }}
@@ -61,23 +82,33 @@ export function Dashboard() {
             ) : (
               <motion.div key="input" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                 <div className="glass-panel flex items-center gap-2 rounded-2xl p-2 pl-4 text-left">
-                  <Search size={18} className="shrink-0 text-text-muted" />
-                  <input
+                  <Search size={18} className="mt-1 shrink-0 text-text-muted" />
+                  <textarea
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && handleAnalyze()}
                     placeholder={t("dashboard.placeholder")}
-                    className="min-w-0 flex-1 bg-transparent py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:outline-none"
+                    rows={3}
+                    className="min-h-20 min-w-0 flex-1 resize-none bg-transparent py-1.5 text-sm leading-6 text-text-primary placeholder:text-text-muted focus:outline-none"
                   />
-                  <button
-                    type="button"
-                    onClick={handleAnalyze}
-                    disabled={!query.trim()}
-                    className="flex shrink-0 items-center gap-1.5 rounded-xl bg-accent-primary px-4 py-2.5 text-sm font-semibold text-text-on-primary transition-colors hover:bg-[var(--accent-primary-hover)] disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    {t("dashboard.analyze")}
-                    <ArrowRight size={15} />
-                  </button>
+                  <div className="flex shrink-0 flex-col items-center gap-2 self-end pb-0.5 sm:flex-row">
+                    <button
+                      type="button"
+                      onClick={() => navigate("/analyze")}
+                      aria-label={t("analyze.modeUpload")}
+                      className="flex size-10 items-center justify-center rounded-xl border border-border-strong text-text-secondary transition-colors hover:border-accent-primary hover:text-accent-primary"
+                    >
+                      <Upload size={17} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleAnalyze}
+                      disabled={!query.trim()}
+                      className="flex shrink-0 items-center gap-1.5 rounded-xl bg-accent-primary px-4 py-2.5 text-sm font-semibold text-text-on-primary transition-colors hover:bg-[var(--accent-primary-hover)] disabled:cursor-not-allowed disabled:bg-surface-muted disabled:text-text-muted"
+                    >
+                      {t("dashboard.analyze")}
+                      <ArrowRight size={15} />
+                    </button>
+                  </div>
                 </div>
 
                 <div className="mt-4 flex flex-wrap items-center justify-center gap-2 text-xs text-text-muted">
@@ -94,9 +125,28 @@ export function Dashboard() {
                   ))}
                 </div>
 
+                <div className="mt-8 grid gap-3 text-left sm:grid-cols-3">
+                  {( [
+                    [FileText, "1", t("dashboard.steps.oneTitle"), t("dashboard.steps.oneBody")],
+                    [BrainCircuit, "2", t("dashboard.steps.twoTitle"), t("dashboard.steps.twoBody")],
+                    [ArrowRight, "3", t("dashboard.steps.threeTitle"), t("dashboard.steps.threeBody")],
+                  ] as Array<[typeof FileText, string, string, string]>).map(([Icon, step, title, body]) => {
+                    const StepIcon = Icon as typeof FileText;
+                    return (
+                      <div key={step as string} className="rounded-2xl border border-border bg-bg-elevated/60 p-4">
+                        <div className="mb-3 flex items-center gap-2 text-xs font-semibold text-accent-primary">
+                          <StepIcon size={15} /> STEP {step}
+                        </div>
+                        <p className="text-sm font-semibold text-text-primary">{title}</p>
+                        <p className="mt-1 text-xs leading-5 text-text-muted">{body}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+
                 <Link
                   to="/analyze"
-                  className="mt-6 inline-flex items-center gap-1.5 text-xs font-medium text-text-muted transition-colors hover:text-accent-primary"
+                  className="mt-5 inline-flex items-center gap-1.5 text-xs font-medium text-text-muted transition-colors hover:text-accent-primary"
                 >
                   <Upload size={13} />
                   {t("analyze.modeUpload")}
