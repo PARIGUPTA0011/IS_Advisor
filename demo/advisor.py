@@ -163,6 +163,9 @@ class Advisor:
                 "requirements": item.requirements.to_dict() if item.requirements else {},
                 "cited_standards": [self.cited(c) for c in item.cited_standards],
                 "candidates": candidates,
+                # Set only when the multilingual layer translated the line:
+                # show the English the search actually ran on.
+                "line_item_english": getattr(item, "line_item_english", "") or "",
             })
         return {
             "items": out_items,

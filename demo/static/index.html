@@ -278,6 +278,7 @@ function render(data) {
     return `
       <section class="card item">
         <div class="item-head"><div class="num">${n + 1}</div><p class="line">${esc(it.line_item)}</p></div>
+        ${it.line_item_english ? `<div class="notice neutral">Translated for search: ${esc(it.line_item_english)}</div>` : ""}
         ${reqChips(it.requirements || {})}
         ${it.cited_standards.map(citedBlock).join("")}
         <div class="cands">${cands || `<p class="hint">No candidate standards found.</p>`}</div>

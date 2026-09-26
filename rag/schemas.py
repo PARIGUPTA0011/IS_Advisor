@@ -18,6 +18,13 @@ class StandardRecord:
     is_number: str
     title: str
     status: Optional[str] = None          # "current" | "withdrawn" | None
+    # Edition identity. `is_number` is one edition ("IS 2062:2011"); `is_base_id`
+    # is the standard across editions ("IS 2062"). Both are dataset columns, not
+    # derived here - rag/kg_editions.py needs them to tell a superseded edition
+    # from a different standard.
+    is_base_id: Optional[str] = None
+    is_year: Optional[int] = None
+    is_canonical: Optional[bool] = None
     aspect: Optional[str] = None
     department: Optional[str] = None
     committee: Optional[str] = None
@@ -48,6 +55,12 @@ class RelatedStandard:
     is_number: str
     title: str
     relationship: str
+    # Filled by rag/kg_editions.py from the metadata store, because the graph
+    # nodes do not carry the last two. A None status means the standard was not
+    # found in the store, which is different from "current".
+    status: Optional[str] = None
+    is_base_id: Optional[str] = None
+    is_year: Optional[int] = None
 
 
 @dataclass(frozen=True)

@@ -34,11 +34,39 @@ SCOPE_TEXT_CSV = WORK_DIR / "data" / "scope_text.csv"
 SCOPE_MIN_TITLE_OVERLAP = 0.35
 
 # --- models (all run locally on CPU; downloaded once, then cached) ---
-# bge-small is 384-dim and asymmetric-friendly, which matters because our
-# documents are ~8-word titles and our queries are paragraphs (trap 4).
+# Two bi-encoders, chosen per line item (README section 14):
+#
+# * BI_ENCODER, bge-small-en-v1.5, for every line that reaches retrieval in
+#   English - English input, and anything the multilingual layer translated.
+#   That is nearly all traffic. On the 86 real tender lines it is clearly the
+#   stronger English encoder: hybrid Recall@5 0.593 against 0.465 for
+#   multilingual-e5-small over the same scope-text index (README section 7).
+# * FALLBACK_ENCODER, multilingual-e5-small, only for a line that is still not
+#   English when it reaches retrieval: translation unavailable or failed, or
+#   romanised Indic, which is searched as typed on purpose. e5 covers ~100
+#   languages and can still land such a line near the right English title,
+#   which bge cannot do at all. It is loaded on first use, so an English-only
+#   session never pays for it.
+#
+# Both are 384-dim. Each has its own vector file and its own prefixes; e5 needs
+# BOTH, asymmetrically ("query: " / "passage: "), and dense.py applies document
+# prefixes at encode time so the stored corpus text stays the real text.
 BI_ENCODER = "BAAI/bge-small-en-v1.5"
 BI_ENCODER_QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
+BI_ENCODER_DOC_PREFIX = ""
+FALLBACK_ENCODER = "intfloat/multilingual-e5-small"
+FALLBACK_QUERY_PREFIX = "query: "
+FALLBACK_DOC_PREFIX = "passage: "
+FALLBACK_EMBEDDINGS_NPY = ARTIFACTS / "embeddings_multilingual.npy"
 CROSS_ENCODER = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+
+# --- multilingual input/output ---
+# Detection and translation live in the repo-root `multilingual` package, which
+# the RAG workstream shares. Off means English-only behaviour, byte for byte.
+MULTILINGUAL = True
+# None auto-detects per line item. Set a FLORES-200 code ("hin_Deva") or an ISO
+# code ("hi") to force both the input and the output language.
+DEFAULT_LANGUAGE = None
 
 # --- retrieval knobs ---
 DENSE_TOP_K = 50          # candidates pulled from the vector index per line item
@@ -86,5 +114,5 @@ MAX_PINNED_PARTS = 3            # cap on parts pinned for a bare cited number
 TIER_HIGH = "Highly relevant"
 TIER_RELATED = "Related"
 TIER_POSSIBLE = "Possibly relevant"
-TIER_HIGH_MIN = 0.96
-TIER_RELATED_MIN = 0.81
+TIER_HIGH_MIN = 0.95
+TIER_RELATED_MIN = 0.82

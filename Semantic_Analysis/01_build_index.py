@@ -26,6 +26,9 @@ def main() -> int:
     parser.add_argument("--no-past-editions", action="store_true", help="drop mined past-edition vocabulary")
     parser.add_argument("--no-aliases", action="store_true", help="drop the curated trade-name list")
     parser.add_argument("--no-scope", action="store_true", help="drop clause 1 scope text")
+    parser.add_argument("--no-fallback", action="store_true",
+                        help="skip the multilingual fallback vectors (untranslated non-English lines "
+                             "then use the English encoder)")
     parser.add_argument("--batch-size", type=int, default=64)
     args = parser.parse_args()
 
@@ -88,6 +91,21 @@ def main() -> int:
             "n_docs": len(frame),
             "model": config.BI_ENCODER,
         }
+
+        if not args.no_fallback and getattr(config, "FALLBACK_ENCODER", None):
+            # Same text, second encoder, its own document prefix. This is the
+            # slow half on CPU (multilingual-e5 is several times slower than bge).
+            from is_advisor.dense import load_encoder
+
+            print(f"Embedding {len(frame):,} documents with {config.FALLBACK_ENCODER} (CPU, fallback)")
+            fallback_vectors = encode_documents(
+                frame["doc_text"].tolist(), model=load_encoder(config.FALLBACK_ENCODER),
+                batch_size=args.batch_size, prefix=config.FALLBACK_DOC_PREFIX,
+            )
+            DenseIndex(fallback_vectors).save(config.FALLBACK_EMBEDDINGS_NPY)
+            print(f"  saved {config.FALLBACK_EMBEDDINGS_NPY.name}  shape={fallback_vectors.shape}")
+            meta["fallback_model"] = config.FALLBACK_ENCODER
+            meta["fallback_fingerprint"] = doc_fingerprint
 
     config.INDEX_META.write_text(json.dumps(meta, indent=2), encoding="utf-8")
 

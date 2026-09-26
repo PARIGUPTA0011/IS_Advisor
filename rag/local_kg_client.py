@@ -44,8 +44,25 @@ class LocalKGClient:
         normative_csv: Path = NORMATIVE_CSV,
     ):
         standards = pd.read_csv(
-            standards_csv, usecols=["kys_id", "is_number", "title", "replaced_by_id"], low_memory=False
+            standards_csv,
+            usecols=["kys_id", "is_number", "title", "replaced_by_id", "dept_code", "committee_code",
+                     "mandatory_cert"],
+            low_memory=False,
         )
+        # Counts for describe_graph(), computed with the rules of
+        # Knowlege_Graph/03 (both codes present) and 06 (mandatory_cert true).
+        placed = standards.dropna(subset=["dept_code", "committee_code"])
+        certified = int((standards["mandatory_cert"] == True).sum())  # noqa: E712
+        self._counts = {
+            "nodes": {
+                "Standard": len(standards),
+                "Department": placed["dept_code"].astype(str).str.strip().nunique(),
+                "Committee": placed["committee_code"].astype(str).str.strip().nunique(),
+                "Certification": 1 if certified else 0,
+            },
+            "relationships": {"BELONGS_TO": len(placed), "MAINTAINED_BY": len(placed),
+                              "REQUIRES_CERTIFICATION": certified},
+        }
         self._node = {
             int(k): (str(n), str(t) if isinstance(t, str) else "")
             for k, n, t in zip(standards["kys_id"], standards["is_number"], standards["title"])
@@ -84,6 +101,26 @@ class LocalKGClient:
             related.append(RelatedStandard(kys_id=target, is_number=is_number, title=title,
                                            relationship=relationship))
         return related
+
+    def describe_graph(self) -> dict:
+        """Same shape as Neo4jKGClient.describe_graph(), so /health and the
+        startup check work unchanged whichever backend is live."""
+        relationships = dict(self._counts["relationships"])
+        for name in (REFERENCES, REPLACED_BY, NORMATIVELY_REFERENCES):
+            relationships[name] = sum(1 for (_, rel, _) in self._seen if rel == name)
+        nodes = self._counts["nodes"]
+        return {
+            "nodes": nodes,
+            "relationships": relationships,
+            "standards": nodes["Standard"],
+            "is_empty": nodes["Standard"] == 0,
+            "backend": "local CSV graph",
+        }
+
+    def empty_graph_warning(self) -> str | None:
+        if self.describe_graph()["is_empty"]:
+            return "The local knowledge graph is empty: IS_Standards_Data/standards.csv has no rows."
+        return None
 
     def close(self) -> None:
         pass

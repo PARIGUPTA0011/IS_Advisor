@@ -1,19 +1,81 @@
+# --- secrets -----------------------------------------------------------------
+# .env holds the Neo4j password and the LLM API key. It has never been
+# committed on this repo (verified against the full history) - keep it that way.
+# .env.example is the template and MUST stay tracked, hence the negation: the
+# `.env.*` line above it would otherwise swallow it.
 .env
+.env.*
+!.env.example
+*.pem
+*.key
+*credentials*.json
+service-account*.json
+
+# --- virtual environments ----------------------------------------------------
 .venv/
-# Semantic_Analysis/artifacts/ is intentionally committed (not gitignored) so
-# clones don't need to run 01_build_index.py (up to 25 min) before working -
-# important for SIH demo reliability. Re-run the build and recommit if
-# IS_Standards_Data/standards.csv or Semantic_Analysis/data/scope_text.csv
-# changes; the loader detects a stale fingerprint and falls back to
-# keyword-only rather than erroring, so a missed recommit degrades quietly
-# instead of breaking.
-# Measurement outputs in the same folder are per-run results, not index files.
-Semantic_Analysis/artifacts/eval_results*.csv
-Semantic_Analysis/artifacts/vocabulary_ablation.csv
-# Scrape caches: re-fetchable, and large.
-Semantic_Analysis/cache_preview
-Semantic_Analysis/cache_tenders/
+venv/
+env/
+ENV/
+
+# --- python ------------------------------------------------------------------
 __pycache__/
-*.pyc
-CLAUDE.md
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+build/
+dist/
+
+# --- retrieval artifacts: deliberately COMMITTED, not ignored ----------------
+# Semantic_Analysis/artifacts/ is intentionally committed so a clone does not
+# need to run 01_build_index.py (up to 25 min) before working - important for
+# SIH demo reliability. Re-run the build and recommit if
+# IS_Standards_Data/standards.csv or Semantic_Analysis/data/scope_text.csv
+# changes (both feed the embedded text), or if is_advisor/config.py names a
+# different BI_ENCODER: the loader compares the text fingerprint *and* the
+# encoder name recorded in index_meta.json, and falls back to keyword-only
+# rather than erroring, so a missed recommit degrades quietly instead of
+# breaking loudly.
+#
+# The binary patterns below are for indexes built *outside* that directory - a
+# stray embeddings.npy elsewhere is still 35 MB of derived data - so the
+# committed artifacts are re-included immediately after them. Without those two
+# negations, `git add` would silently refuse the very files we mean to track.
+*.npy
+*.pkl
+*.parquet
+*.faiss
+!Semantic_Analysis/artifacts/
+!Semantic_Analysis/artifacts/**
+
+# --- model caches ------------------------------------------------------------
+# Only bites if HF_HOME or TRANSFORMERS_CACHE is pointed inside the repo. The
+# checkpoints are gigabytes: NLLB-200 is 2.5 GB, multilingual-e5-small 0.5 GB.
+.cache/
+models--*/
+*.safetensors
+*.gguf
+
+# --- editors and operating systems -------------------------------------------
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- scrape caches -----------------------------------------------------------
+# Re-fetchable page and PDF caches for bis_scope_scraper.py and
+# 09_build_tender_eval.py. Large, and not source.
+Semantic_Analysis/cache_preview/
+Semantic_Analysis/cache_tenders/
+
+# --- logs and scratch --------------------------------------------------------
 *.log
+scratch/
+tmp/
+
+# --- local agent instructions ------------------------------------------------
+CLAUDE.md
