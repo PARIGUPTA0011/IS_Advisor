@@ -63,7 +63,7 @@ export function EntryPoint({ kind }: { kind: "history" | "library" }) {
           <div className="flex size-12 items-center justify-center rounded-2xl bg-accent-primary/10 text-accent-primary"><Clock3 size={24} /></div>
           <p className="mt-6 text-xs font-semibold uppercase tracking-[0.18em] text-accent-primary">Recent analyses</p>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight text-text-primary">Your analysis history</h1>
-          <p className="mt-3 max-w-xl text-sm leading-6 text-text-secondary">Open a completed analysis without calling the backend again.</p>
+
         </div>
         {entries.length > 0 && <button type="button" onClick={clearHistory} className="flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm font-medium text-text-secondary hover:bg-surface-muted hover:text-text-primary"><Trash2 size={15} />Clear history</button>}
       </div>
@@ -71,7 +71,7 @@ export function EntryPoint({ kind }: { kind: "history" | "library" }) {
         <div className="mt-8 rounded-3xl border border-dashed border-border bg-bg-elevated p-10 text-center">
           <Clock3 className="mx-auto text-text-muted" size={28} />
           <h2 className="mt-4 text-lg font-semibold text-text-primary">No analyses yet</h2>
-          <p className="mt-2 text-sm text-text-secondary">Your successful procurement analyses will appear here.</p>
+          <p className="mt-2 text-sm text-text-secondary">No analyses yet — results from your searches will show up here.</p>
           <button type="button" onClick={() => navigate("/analyze")} className="mt-5 rounded-xl bg-accent-primary px-4 py-2.5 text-sm font-semibold text-text-on-primary">Analyze a tender</button>
         </div>
       ) : (
