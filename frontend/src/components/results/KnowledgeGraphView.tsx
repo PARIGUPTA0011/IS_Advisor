@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import ForceGraph2D, { type ForceGraphMethods } from "react-force-graph-2d";
 import { Network } from "lucide-react";
-import type { KnowledgeGraphEdge, KnowledgeGraphNode } from "../../types/api";
+import type { KnowledgeGraphEdge, KnowledgeGraphNode, Relationship } from "../../types/api";
 
 interface Props {
   nodes: KnowledgeGraphNode[];
@@ -13,7 +13,7 @@ interface GraphNode extends KnowledgeGraphNode {
   y?: number;
   fx?: number;
   fy?: number;
-  isPrimary?: boolean;
+  isFocus?: boolean;
 }
 
 interface GraphLink extends Omit<KnowledgeGraphEdge, "source" | "target"> {
@@ -21,63 +21,89 @@ interface GraphLink extends Omit<KnowledgeGraphEdge, "source" | "target"> {
   target: string | GraphNode;
 }
 
-function drawEllipsizedText(
-  context: CanvasRenderingContext2D,
-  text: string,
-  x: number,
-  y: number,
-  maxWidth: number,
-) {
-  const characters = Array.from(text);
-  let label = text;
-  while (label && context.measureText(label).width > maxWidth) {
-    characters.pop();
-    label = `${characters.join("")}...`;
-  }
-  context.fillText(label, x, y);
-}
-
-const RELATION_COLORS: Record<string, string> = {
-  REFERENCES: "#287c70",
-  REFERENCED_BY: "#287c70",
-  REPLACED_BY: "#cf7938",
-  REPLACES: "#cf7938",
+// One entry per relationship type: how it reads, how it is drawn, and whether
+// it is shown before the user asks. Normative references (clause 2) and
+// replacements answer "what else must I comply with / what supersedes this";
+// the scraped cross-references are numerous and noisy, so they start hidden.
+const RELATIONS: Record<Relationship, { label: string; color: string; dash: number[] | null; on: boolean }> = {
+  NORMATIVELY_REFERENCES: { label: "Normative references", color: "#6d4bd1", dash: null, on: true },
+  REPLACED_BY: { label: "Replaced by", color: "#cf7938", dash: null, on: true },
+  REPLACES: { label: "Supersedes", color: "#cf7938", dash: null, on: true },
+  REFERENCES: { label: "Cites", color: "#287c70", dash: [5, 4], on: false },
+  REFERENCED_BY: { label: "Cited by", color: "#8a949e", dash: [2, 3], on: false },
 };
+const ORDER = Object.keys(RELATIONS) as Relationship[];
+
+// A standard like IS 1786 is cited by dozens of others; past this many
+// neighbours per relationship the drawing stops being readable.
+const MAX_PER_RELATION = 10;
+const HEIGHT = 440;
 
 export function KnowledgeGraphView({ nodes, edges }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const graphRef = useRef<ForceGraphMethods<GraphNode, GraphLink>>();
+  const graphRef = useRef<ForceGraphMethods<GraphNode, GraphLink> | undefined>(undefined);
   const [width, setWidth] = useState(720);
-  const [selectedNode, setSelectedNode] = useState<KnowledgeGraphNode | null>(null);
+  const [selected, setSelected] = useState<KnowledgeGraphNode | null>(null);
 
-  const graphData = useMemo(() => {
-    const primaryId = nodes.find((node) => node.retrieved)?.id ?? nodes[0]?.id;
-    return {
-      nodes: nodes.map((node) => ({
-        ...node,
-        isPrimary: node.id === primaryId,
-        ...(node.id === primaryId ? { fx: 0, fy: 0 } : {}),
-      })),
-      links: edges.map((edge) => ({ ...edge })),
-    };
-  }, [edges, nodes]);
+  const retrieved = useMemo(() => nodes.filter((n) => n.retrieved), [nodes]);
+  const [focusId, setFocusId] = useState<string | null>(null);
+  const focus = retrieved.find((n) => n.id === focusId) ?? retrieved[0] ?? null;
+
+  const [enabled, setEnabled] = useState<Record<string, boolean>>(
+    () => Object.fromEntries(ORDER.map((r) => [r, RELATIONS[r].on])),
+  );
+
+  // Edges touching the focus standard, grouped by type, before any filtering:
+  // the counts on the filter chips come from here.
+  const byType = useMemo(() => {
+    const groups: Partial<Record<Relationship, KnowledgeGraphEdge[]>> = {};
+    if (!focus) return groups;
+    for (const edge of edges) {
+      if (edge.source !== focus.id && edge.target !== focus.id) continue;
+      (groups[edge.relationship] ??= []).push(edge);
+    }
+    return groups;
+  }, [edges, focus]);
+
+  const nodeById = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes]);
+
+  const { graphData, hidden } = useMemo(() => {
+    if (!focus) return { graphData: { nodes: [], links: [] }, hidden: 0 };
+    const keep = new Map<string, GraphNode>([[focus.id, { ...focus, isFocus: true, fx: 0, fy: 0 }]]);
+    const links: GraphLink[] = [];
+    let dropped = 0;
+    for (const relation of ORDER) {
+      const group = byType[relation] ?? [];
+      if (!enabled[relation]) continue;
+      group.forEach((edge, index) => {
+        if (index >= MAX_PER_RELATION) {
+          dropped += 1;
+          return;
+        }
+        const otherId = edge.source === focus.id ? edge.target : edge.source;
+        const other = nodeById.get(otherId);
+        if (!other) return;
+        if (!keep.has(otherId)) keep.set(otherId, { ...other });
+        links.push({ ...edge });
+      });
+    }
+    return { graphData: { nodes: [...keep.values()], links }, hidden: dropped };
+  }, [byType, enabled, focus, nodeById]);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-
-    const observer = new ResizeObserver(([entry]) => {
-      setWidth(Math.floor(entry.contentRect.width));
-    });
+    const observer = new ResizeObserver(([entry]) => setWidth(Math.floor(entry.contentRect.width)));
     observer.observe(container);
     return () => observer.disconnect();
   }, []);
 
   useEffect(() => {
-    const linkForce = graphRef.current?.d3Force("link");
-    linkForce?.distance(150);
-    graphRef.current?.d3Force("charge")?.strength(-420);
+    graphRef.current?.d3Force("link")?.distance(90);
+    graphRef.current?.d3Force("charge")?.strength(-260);
   }, [graphData]);
+
+  const shown = graphData.links.length;
 
   return (
     <section className="glass-panel overflow-hidden rounded-2xl">
@@ -88,107 +114,172 @@ export function KnowledgeGraphView({ nodes, edges }: Props) {
           </span>
           <div>
             <h2 className="text-sm font-semibold text-text-primary">Knowledge graph</h2>
-            <p className="text-xs text-text-muted">Standards and relationships for this tender</p>
+            <p className="text-xs text-text-muted">
+              What each recommended standard depends on and what it replaced
+            </p>
           </div>
         </div>
-        <div className="flex gap-3 text-xs text-text-secondary">
-          <span>{nodes.length} standards</span>
-          <span>{edges.length} relationships</span>
-        </div>
+        {focus && (
+          <div className="text-xs text-text-secondary">
+            {shown} of {Object.values(byType).reduce((sum, g) => sum + (g?.length ?? 0), 0)} relationships shown
+            {hidden > 0 && <span className="text-text-muted"> · {hidden} more hidden (limit {MAX_PER_RELATION} per type)</span>}
+          </div>
+        )}
       </div>
 
-      {nodes.length === 0 ? (
+      {!focus ? (
         <div className="flex min-h-56 flex-col items-center justify-center px-6 text-center">
           <Network size={24} className="text-text-muted" />
           <p className="mt-3 text-sm font-medium text-text-primary">No graph relationships found</p>
           <p className="mt-1 max-w-sm text-xs text-text-muted">
-            This analysis did not retrieve standards with connected Neo4j relationships.
+            This analysis did not retrieve standards with connected knowledge-graph relationships.
           </p>
         </div>
       ) : (
         <>
-          <div ref={containerRef} className="h-[400px] w-full bg-[var(--bg-elevated)]">
+          {/* Which recommended standard sits at the centre. */}
+          {retrieved.length > 1 && (
+            <div className="flex flex-wrap gap-2 border-b border-border px-5 py-3">
+              {retrieved.map((node) => (
+                <button
+                  key={node.id}
+                  type="button"
+                  onClick={() => {
+                    setFocusId(node.id);
+                    setSelected(null);
+                  }}
+                  title={node.title ?? undefined}
+                  className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                    node.id === focus.id
+                      ? "border-[#1678d2] bg-[#1678d2] text-white"
+                      : "border-border text-text-secondary hover:border-[#1678d2]"
+                  }`}
+                >
+                  {node.standard_id}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Relationship filters, with how many of each the focus standard has. */}
+          <div className="flex flex-wrap gap-2 px-5 py-3">
+            {ORDER.map((relation) => {
+              const count = byType[relation]?.length ?? 0;
+              const style = RELATIONS[relation];
+              const on = enabled[relation];
+              return (
+                <button
+                  key={relation}
+                  type="button"
+                  disabled={count === 0}
+                  onClick={() => setEnabled((prev) => ({ ...prev, [relation]: !prev[relation] }))}
+                  className={`inline-flex items-center gap-2 rounded-lg border px-2.5 py-1 text-xs transition-opacity ${
+                    count === 0 ? "cursor-not-allowed opacity-40" : on ? "opacity-100" : "opacity-55"
+                  } border-border text-text-secondary`}
+                  aria-pressed={on}
+                >
+                  <i
+                    className="h-0.5 w-4"
+                    style={{
+                      borderTop: `2px ${style.dash ? "dashed" : "solid"} ${style.color}`,
+                    }}
+                  />
+                  {style.label}
+                  <span className="font-semibold text-text-primary">{count}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div ref={containerRef} className="w-full bg-[var(--bg-elevated)]" style={{ height: HEIGHT }}>
             <ForceGraph2D
               ref={graphRef}
               graphData={graphData}
               width={width}
-              height={400}
+              height={HEIGHT}
               backgroundColor="transparent"
-              nodeLabel={(node) => `${node.standard_id}${node.title ? `: ${node.title}` : ""}`}
+              nodeLabel={(node) => `${node.standard_id}${node.title ? ` — ${node.title}` : ""}${node.status === "withdrawn" ? " (withdrawn)" : ""}`}
+              nodeRelSize={4}
+              nodeVal={(node) => (node.isFocus ? 6 : 2)}
               nodeCanvasObjectMode={() => "replace"}
               nodeCanvasObject={(node, context, globalScale) => {
-                const graphNode = node as GraphNode;
-                if (graphNode.x === undefined || graphNode.y === undefined) return;
-
-                const radius = (graphNode.isPrimary ? 74 : graphNode.retrieved ? 56 : 48) / globalScale;
-                const isSelected = selectedNode?.id === graphNode.id;
+                const n = node as GraphNode;
+                if (n.x === undefined || n.y === undefined) return;
                 const isDark = document.documentElement.dataset.theme === "dark";
+                const isSelected = selected?.id === n.id;
+                const radius = n.isFocus ? 9 : 5;
 
                 context.beginPath();
-                context.arc(graphNode.x, graphNode.y, radius + (isSelected ? 4 : 0) / globalScale, 0, 2 * Math.PI);
-                context.fillStyle = graphNode.isPrimary
+                context.arc(n.x, n.y, radius, 0, 2 * Math.PI);
+                context.fillStyle = n.isFocus
                   ? "#1678d2"
-                  : graphNode.retrieved
-                    ? (isDark ? "#173d61" : "#e6f3ff")
-                    : (isDark ? "#292d35" : "#ffffff");
+                  : n.status === "withdrawn"
+                    ? "#d64545"
+                    : n.retrieved
+                      ? "#5aa6ea"
+                      : isDark ? "#9aa8b6" : "#b9c6d3";
                 context.fill();
-                context.lineWidth = (isSelected ? 3 : graphNode.isPrimary ? 2.5 : 1.5) / globalScale;
-                context.strokeStyle = isSelected || graphNode.isPrimary
-                  ? (isDark ? "#ffffff" : "#1764a5")
-                  : (isDark ? "#71859a" : "#8ab8df");
-                context.stroke();
-
-                context.textAlign = "center";
-                context.textBaseline = "middle";
-                const numberFontSize = (graphNode.isPrimary ? 13 : 10) / globalScale;
-                const titleFontSize = (graphNode.isPrimary ? 11 : 9) / globalScale;
-                const textColor = graphNode.isPrimary ? "#ffffff" : isDark ? "#e7edf3" : "#243747";
-                context.fillStyle = textColor;
-                let fittedNumberFontSize = numberFontSize;
-                context.font = `600 ${fittedNumberFontSize}px sans-serif`;
-                while (
-                  context.measureText(graphNode.standard_id).width > radius * 1.7 &&
-                  fittedNumberFontSize > 7 / globalScale
-                ) {
-                  fittedNumberFontSize -= 0.5 / globalScale;
-                  context.font = `600 ${fittedNumberFontSize}px sans-serif`;
+                if (isSelected) {
+                  context.lineWidth = 2 / globalScale;
+                  context.strokeStyle = isDark ? "#ffffff" : "#1b2733";
+                  context.stroke();
                 }
-                context.fillText(graphNode.standard_id, graphNode.x, graphNode.y - 7 / globalScale);
 
-                if (graphNode.title) {
-                  context.fillStyle = graphNode.isPrimary ? "rgba(255,255,255,0.88)" : isDark ? "#b8c4d0" : "#617587";
-                  context.font = `400 ${titleFontSize}px sans-serif`;
-                  drawEllipsizedText(context, graphNode.title, graphNode.x, graphNode.y + 12 / globalScale, radius * 1.65);
+                // Labels: always for the focus, and for neighbours once zoomed
+                // in enough that they no longer collide.
+                if (n.isFocus || globalScale > 1.1 || isSelected) {
+                  const fontSize = (n.isFocus ? 13 : 11) / globalScale;
+                  context.font = `${n.isFocus ? 700 : 500} ${fontSize}px sans-serif`;
+                  context.textAlign = "center";
+                  context.textBaseline = "top";
+                  context.fillStyle = isDark ? "#e7edf3" : "#243747";
+                  context.fillText(n.standard_id, n.x, n.y + radius + 2 / globalScale);
                 }
               }}
-              nodeVal={(node) => node.isPrimary ? 40 : 18}
-              linkLabel={(link) => link.relationship}
-              linkColor={(link) => RELATION_COLORS[link.relationship] ?? "#89919a"}
-              linkLineDash={(link) => ["REFERENCES", "REFERENCED_BY"].includes(link.relationship) ? [5, 4] : null}
-              linkWidth={(link) => link.relationship === "REPLACED_BY" || link.relationship === "REPLACES" ? 2 : 1.4}
-              linkDirectionalArrowLength={5}
+              nodePointerAreaPaint={(node, color, context) => {
+                const n = node as GraphNode;
+                if (n.x === undefined || n.y === undefined) return;
+                context.fillStyle = color;
+                context.beginPath();
+                context.arc(n.x, n.y, n.isFocus ? 11 : 7, 0, 2 * Math.PI);
+                context.fill();
+              }}
+              linkLabel={(link) => RELATIONS[link.relationship as Relationship]?.label ?? link.relationship}
+              linkColor={(link) => RELATIONS[link.relationship as Relationship]?.color ?? "#89919a"}
+              linkLineDash={(link) => RELATIONS[link.relationship as Relationship]?.dash ?? null}
+              linkWidth={(link) => (link.relationship === "NORMATIVELY_REFERENCES" ? 1.8 : 1.2)}
+              linkDirectionalArrowLength={4}
               linkDirectionalArrowRelPos={1}
-              onNodeClick={(node) => setSelectedNode(node as GraphNode)}
-              cooldownTicks={100}
+              onNodeClick={(node) => setSelected(node as GraphNode)}
+              onBackgroundClick={() => setSelected(null)}
+              cooldownTicks={120}
+              onEngineStop={() => graphRef.current?.zoomToFit(400, 40)}
               enableNodeDrag
             />
           </div>
 
           <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-border px-5 py-3 text-xs text-text-secondary">
-            <span className="inline-flex items-center gap-2"><i className="size-2.5 rounded-full bg-[#1678d2]" />Tender standard</span>
-            <span className="inline-flex items-center gap-2"><i className="size-2.5 rounded-full border border-[#8ab8df] bg-white" />Connected standard</span>
-            <span className="inline-flex items-center gap-2"><i className="h-0.5 w-5 border-t-2 border-dashed border-[#287c70]" />References</span>
-            <span className="inline-flex items-center gap-2"><i className="h-0.5 w-5 border-t-2 border-[#cf7938]" />Replacements</span>
+            <span className="inline-flex items-center gap-2"><i className="size-2.5 rounded-full bg-[#1678d2]" />Selected recommendation</span>
+            <span className="inline-flex items-center gap-2"><i className="size-2.5 rounded-full bg-[#5aa6ea]" />Also recommended</span>
+            <span className="inline-flex items-center gap-2"><i className="size-2.5 rounded-full bg-[#b9c6d3]" />Related standard</span>
+            <span className="inline-flex items-center gap-2"><i className="size-2.5 rounded-full bg-[#d64545]" />Withdrawn</span>
+            <span className="text-text-muted">Scroll to zoom · labels appear when zoomed in · click a node for details</span>
           </div>
 
-          {selectedNode && (
+          {selected && graphData.nodes.some((n) => n.id === selected.id) && (
             <div className="border-t border-border bg-surface-muted px-5 py-3">
               <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                <strong className="text-sm text-text-primary">{selectedNode.standard_id}</strong>
-                <span className="text-xs text-text-muted">{selectedNode.retrieved ? "Retrieved for this tender" : "Neo4j neighbor"}</span>
+                <strong className="text-sm text-text-primary">{selected.standard_id}</strong>
+                <span className="text-xs text-text-muted">
+                  {selected.retrieved ? "Recommended for this tender" : "Related standard"}
+                </span>
               </div>
-              {selectedNode.title && <p className="mt-1 text-sm text-text-secondary">{selectedNode.title}</p>}
-              {selectedNode.status && <p className="mt-1 text-xs capitalize text-text-muted">Status: {selectedNode.status}</p>}
+              {selected.title && <p className="mt-1 text-sm text-text-secondary">{selected.title}</p>}
+              {selected.status && (
+                <p className={`mt-1 text-xs capitalize ${selected.status === "withdrawn" ? "text-[#d64545]" : "text-text-muted"}`}>
+                  Status: {selected.status}
+                </p>
+              )}
             </div>
           )}
         </>
