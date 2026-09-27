@@ -44,11 +44,31 @@ export interface EvidenceOut {
   tier: string | null;
 }
 
+export interface KnowledgeGraphNode {
+  id: string;
+  standard_id: string;
+  title: string | null;
+  status: StandardStatus;
+  retrieved: boolean;
+}
+
+export interface KnowledgeGraphEdge {
+  source: string;
+  target: string;
+  relationship: Relationship;
+}
+
+export interface KnowledgeGraphOut {
+  nodes: KnowledgeGraphNode[];
+  edges: KnowledgeGraphEdge[];
+}
+
 export interface RecommendResponse {
   query: string;
   recommendations: RecommendationOut[];
   related_standards: RelatedStandardOut[];
   evidence: EvidenceOut[];
+  knowledge_graph: KnowledgeGraphOut;
   warnings: string[];
   confidence: Confidence;
 }

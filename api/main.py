@@ -99,11 +99,31 @@ class EvidenceOut(BaseModel):
     tier: str | None = None    # retriever's own relevance band, e.g. "Highly relevant"
 
 
+class KnowledgeGraphNodeOut(BaseModel):
+    id: str
+    standard_id: str
+    title: str | None = None
+    status: str | None = None
+    retrieved: bool
+
+
+class KnowledgeGraphEdgeOut(BaseModel):
+    source: str
+    target: str
+    relationship: str
+
+
+class KnowledgeGraphOut(BaseModel):
+    nodes: list[KnowledgeGraphNodeOut]
+    edges: list[KnowledgeGraphEdgeOut]
+
+
 class RecommendResponse(BaseModel):
     query: str
     recommendations: list[RecommendationOut]
     related_standards: list[RelatedStandardOut]
     evidence: list[EvidenceOut]
+    knowledge_graph: KnowledgeGraphOut
     warnings: list[str]
     confidence: str
 
@@ -119,6 +139,43 @@ def _run_and_build_response(query: str, top_k: int, language: str | None) -> Rec
         language=language,
     )
     response = result.response
+    graph_nodes: dict[int, KnowledgeGraphNodeOut] = {}
+    graph_edges: dict[tuple[int, int, str], KnowledgeGraphEdgeOut] = {}
+
+    for evidence in result.evidence:
+        if evidence.record:
+            graph_nodes[evidence.kys_id] = KnowledgeGraphNodeOut(
+                id=str(evidence.kys_id),
+                standard_id=evidence.record.is_number,
+                title=evidence.record.title,
+                status=evidence.record.status,
+                retrieved=True,
+            )
+
+    for evidence in result.evidence:
+        if not evidence.record:
+            continue
+        for relation in evidence.kg_relations:
+            related_record = app_state["store"].get(relation.kys_id)
+            graph_nodes.setdefault(
+                relation.kys_id,
+                KnowledgeGraphNodeOut(
+                    id=str(relation.kys_id),
+                    standard_id=relation.is_number,
+                    title=related_record.title if related_record else relation.title,
+                    status=related_record.status if related_record else None,
+                    retrieved=False,
+                ),
+            )
+            source_id, target_id = evidence.kys_id, relation.kys_id
+            if relation.relationship in {"REFERENCED_BY", "REPLACES"}:
+                source_id, target_id = target_id, source_id
+            graph_edges[(source_id, target_id, relation.relationship)] = KnowledgeGraphEdgeOut(
+                source=str(source_id),
+                target=str(target_id),
+                relationship=relation.relationship,
+            )
+
     return RecommendResponse(
         query=response.query,
         recommendations=[
@@ -145,6 +202,10 @@ def _run_and_build_response(query: str, top_k: int, language: str | None) -> Rec
             )
             for i, e in enumerate(result.evidence)
         ],
+        knowledge_graph=KnowledgeGraphOut(
+            nodes=list(graph_nodes.values()),
+            edges=list(graph_edges.values()),
+        ),
         warnings=response.warnings,
         confidence=response.confidence,
     )
