@@ -33,13 +33,38 @@ class SemanticRetriever:
         )
 
     def retrieve(self, query: str, top_k: int = 10) -> list[RetrievedEvidence]:
+        from is_advisor import config
+        from is_advisor.query import extract_is_numbers, strip_boilerplate
+        from is_advisor.search import needs_multilingual_encoder
+
+        # The same query cleaning the evaluation measures: re-split words PDF
+        # extraction ran together, drop procurement boilerplate and quantities.
+        # Cleaning removes citations, so any cited IS number is put back for
+        # BM25 to match exactly - here it is the strongest signal a tender has.
+        cleaned = " ".join([strip_boilerplate(query) or query, *extract_is_numbers(query)])
         candidates = self._retriever.retrieve(
-            query,
+            cleaned,
             top_k=top_k,
             use_reranker=self._use_reranker,
             use_bm25=True,
             use_dense=self._use_dense,
+            # Text still in a non-Latin script (translation off or failed) goes
+            # through the multilingual encoder, as in search_document().
+            use_fallback_encoder=needs_multilingual_encoder(cleaned),
         )
+        # A standard the query cites outright is a fact, not a guess: pin it
+        # first, exactly as search_document() does, including the parts of a
+        # cited number BIS has since split.
+        pinned = []
+        for cited in extract_is_numbers(query):
+            citation = self._retriever.resolve_citation(cited)
+            if citation.in_index:
+                pinned.append(self._retriever._pin(cited, config.SCORE_CITED, f"cited explicitly as {cited}"))
+            for part in citation.successor_parts:
+                pinned.append(self._retriever._pin(part, config.SCORE_CITED_PART,
+                                                   f"part of {cited}, which the query cites"))
+        pinned_ids = {c.kys_id for c in pinned}
+        candidates = (pinned + [c for c in candidates if c.kys_id not in pinned_ids])[:top_k]
         return [self._to_evidence(candidate) for candidate in candidates]
 
     @staticmethod
