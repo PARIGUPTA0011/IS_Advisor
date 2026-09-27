@@ -334,6 +334,32 @@ def test_source_encoding_damage_normalised() -> None:
     check("lowercase IS prefix fixed", corpus.load_standards()["is_number"].str.match(r"^Is\b").sum(), 0)
 
 
+def test_run_together_text_is_split() -> None:
+    """A third of real tender lines lose their spaces in PDF extraction."""
+    from is_advisor.wordsplit import split_run_together
+
+    check("glued BOQ text split",
+          split_run_together("Supplying,installing,testingandcommissioningofGIpipes"),
+          "Supplying, installing, testing and commissioning of gi pipes")
+    # Misspellings used to shatter into fragments ("treat em ent") and cost recall.
+    check("misspelling left alone", split_run_together("treatement construcion"), "treatement construcion")
+    clean = "Cross linked polyethylene insulated XLPE power cables, polyvinylchloride sheath"
+    check("clean text untouched", split_run_together(clean), clean)
+    check("citation not split into words", "13920" in query.strip_boilerplate("bars as perIS13920 grade"), False)
+
+
+def test_multilingual_fallback_routing() -> None:
+    """Untranslated Indic text goes to the multilingual encoder; English and
+    romanised Indic (plus the glossary's English hints) stay on the English one."""
+    from is_advisor.search import needs_multilingual_encoder
+
+    check("devanagari routed", needs_multilingual_encoder("सीमेंट 43 ग्रेड cement"), True)
+    check("romanised stays", needs_multilingual_encoder("TMT sariya Fe500D chahiye bar steel"), False)
+    check("english stays", needs_multilingual_encoder("Ductile iron pressure pipes K9"), False)
+    # Vowel signs are combining marks, not \w; cleanup used to delete them.
+    check("indic vowel signs survive cleanup", query.strip_boilerplate("आरसीसी कार्य"), "आरसीसी कार्य")
+
+
 def main() -> int:
     for name, func in sorted(globals().items()):
         if name.startswith("test_") and callable(func):

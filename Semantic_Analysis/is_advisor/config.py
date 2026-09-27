@@ -19,21 +19,59 @@ LOOKUP_PARQUET = ARTIFACTS / "lookup.parquet"
 EMBEDDINGS_NPY = ARTIFACTS / "embeddings.npy"
 FAISS_INDEX = ARTIFACTS / "index.faiss"
 BM25_PICKLE = ARTIFACTS / "bm25.pkl"
+SCOPE_BM25_PICKLE = ARTIFACTS / "bm25_scope.pkl"
 INDEX_META = ARTIFACTS / "index_meta.json"
 
 CURATED_ALIASES = WORK_DIR / "data" / "aliases.csv"
-EVAL_SET = WORK_DIR / "data" / "eval_set.jsonl"
+EVAL_SET = WORK_DIR / "data" / "eval_set.jsonl"            # hand-written, see README section 8
+EVAL_TENDERS = WORK_DIR / "data" / "eval_tenders.jsonl"    # real tender BOQ lines, 09_build_tender_eval.py
+
+# Clause 1 (Scope) from the BSB Edge preview pages, see data/SCOPE_TEXT.md.
+# Only `ok` rows are used, and of those only rows whose scope repeats enough of
+# the title's content words: below 0.35 is where bad OCR and mis-scraped pages
+# concentrate (SCOPE_TEXT.md section 2).
+SCOPE_TEXT_CSV = WORK_DIR / "data" / "scope_text.csv"
+SCOPE_MIN_TITLE_OVERLAP = 0.35
 
 # --- models (all run locally on CPU; downloaded once, then cached) ---
-# bge-small is 384-dim and asymmetric-friendly, which matters because our
-# documents are ~8-word titles and our queries are paragraphs (trap 4).
+# Two bi-encoders, chosen per line item (README section 14):
+#
+# * BI_ENCODER, bge-small-en-v1.5, for every line that reaches retrieval in
+#   English - English input, and anything the multilingual layer translated.
+#   That is nearly all traffic. On the 86 real tender lines it is clearly the
+#   stronger English encoder: hybrid Recall@5 0.593 against 0.465 for
+#   multilingual-e5-small over the same scope-text index (README section 7).
+# * FALLBACK_ENCODER, multilingual-e5-small, only for a line that is still not
+#   English when it reaches retrieval: translation unavailable or failed, or
+#   romanised Indic, which is searched as typed on purpose. e5 covers ~100
+#   languages and can still land such a line near the right English title,
+#   which bge cannot do at all. It is loaded on first use, so an English-only
+#   session never pays for it.
+#
+# Both are 384-dim. Each has its own vector file and its own prefixes; e5 needs
+# BOTH, asymmetrically ("query: " / "passage: "), and dense.py applies document
+# prefixes at encode time so the stored corpus text stays the real text.
 BI_ENCODER = "BAAI/bge-small-en-v1.5"
 BI_ENCODER_QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
+BI_ENCODER_DOC_PREFIX = ""
+FALLBACK_ENCODER = "intfloat/multilingual-e5-small"
+FALLBACK_QUERY_PREFIX = "query: "
+FALLBACK_DOC_PREFIX = "passage: "
+FALLBACK_EMBEDDINGS_NPY = ARTIFACTS / "embeddings_multilingual.npy"
 CROSS_ENCODER = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+
+# --- multilingual input/output ---
+# Detection and translation live in the repo-root `multilingual` package, which
+# the RAG workstream shares. Off means English-only behaviour, byte for byte.
+MULTILINGUAL = True
+# None auto-detects per line item. Set a FLORES-200 code ("hin_Deva") or an ISO
+# code ("hi") to force both the input and the output language.
+DEFAULT_LANGUAGE = None
 
 # --- retrieval knobs ---
 DENSE_TOP_K = 50          # candidates pulled from the vector index per line item
 BM25_TOP_K = 50           # candidates pulled from the lexical index per line item
+SCOPE_TOP_K = 50          # candidates pulled from the scope-text index per line item
 FUSION_TOP_K = 50         # size of the fused list handed to the cross-encoder
 RRF_K = 60                # reciprocal-rank-fusion damping constant
 FINAL_TOP_K = 10
@@ -42,6 +80,13 @@ FINAL_TOP_K = 10
 # lowers Recall@5 on the current evaluation set. Turn it on to re-measure
 # once the evaluation set is replaced with real tender lines.
 USE_RERANKER = False
+
+# The scope-text BM25 is built and available as a third RRF list but off by
+# default: at equal weight it dropped Recall@5 from 0.909 to 0.736, because it
+# covers under half the index and lifts every covered standard it matches.
+# Scope text still reaches the ranking through the embedded text, which is
+# where it measured as a win. See README section 7.
+USE_SCOPE_RETRIEVER = False
 
 # --- metadata boosts (trap 2: boosts, never hard filters) ---
 BOOST_PRODUCT_SPEC = 0.06       # procurement asks for products, not test methods
@@ -69,5 +114,5 @@ MAX_PINNED_PARTS = 3            # cap on parts pinned for a bare cited number
 TIER_HIGH = "Highly relevant"
 TIER_RELATED = "Related"
 TIER_POSSIBLE = "Possibly relevant"
-TIER_HIGH_MIN = 0.96
-TIER_RELATED_MIN = 0.84
+TIER_HIGH_MIN = 0.95
+TIER_RELATED_MIN = 0.82
