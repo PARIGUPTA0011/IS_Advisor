@@ -6,7 +6,9 @@
   "nav": {
     "dashboard": "डैशबोर्ड",
     "analyze": "निविदा का विश्लेषण करें",
-    "settings": "सेटिंग्स"
+    "history": "इतिहास",
+    "settings": "सेटिंग्स",
+    "about": "परिचय"
   },
   "dashboard": {
     "heading": "आज आप क्या खरीद रहे हैं?",
@@ -85,6 +87,18 @@
     "backendOnline": "बैकएंड सक्रिय है",
     "backendOffline": "बैकएंड निष्क्रिय है",
     "standardsLoaded": "{{count}} मानक लोड किए गए"
+  },
+  "about": {
+    "howItWorks": "यह कैसे काम करता है",
+    "stepOneTitle": "अपनी आवश्यकता बताएं",
+    "stepOne": "आप क्या खरीदना चाहते हैं, अपने शब्दों में बताएं।",
+    "stepTwoTitle": "सही संबंध खोजें",
+    "stepTwo": "देखें कि प्रासंगिक मानक एक-दूसरे से कैसे जुड़े हैं।",
+    "stepThreeTitle": "सिफारिशों की समीक्षा करें",
+    "stepThree": "हर सिफारिश दिखाने से पहले वास्तविक प्रमाण से जांची जाती है।",
+    "standardsIndexed": "अनुक्रमित मानक",
+    "targetLanguages": "लक्षित भाषाएं",
+    "projectLine": "IS-Advisor · खरीद के लिए मानक बुद्धिमत्ता"
   },
   "confidence": {
     "high": "उच्च विश्वास",

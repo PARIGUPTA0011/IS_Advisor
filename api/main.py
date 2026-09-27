@@ -42,6 +42,8 @@ from rag.llm_client import get_llm_client
 from rag.metadata_store import MetadataStore
 from rag.pipeline import run_query
 from rag.retriever_factory import get_retriever
+from Semantic_Analysis.is_advisor.search import load_retriever
+from api.tender_health import build_health_report
 
 _SEMANTIC_ANALYSIS_ROOT = Path(__file__).resolve().parent.parent / "Semantic_Analysis"
 if str(_SEMANTIC_ANALYSIS_ROOT) not in sys.path:
@@ -58,6 +60,13 @@ async def lifespan(app: FastAPI):
     store = MetadataStore()
     app_state["store"] = store
     app_state["retriever"] = get_retriever(store)
+    app_state["health_retriever"] = load_retriever(
+        with_dense=False,
+        with_reranker=False,
+        with_spacy=True,
+    )
+    # Neo4j when configured and reachable, the same graph from CSV otherwise,
+    # so the API starts on a machine without Neo4j credentials.
     app_state["kg"] = get_kg_client()
     app_state["llm"] = get_llm_client()
     # Logged once at startup rather than as Neo4j notifications on every
@@ -132,11 +141,31 @@ class EvidenceOut(BaseModel):
     tier: str | None = None    # retriever's own relevance band, e.g. "Highly relevant"
 
 
+class KnowledgeGraphNodeOut(BaseModel):
+    id: str
+    standard_id: str
+    title: str | None = None
+    status: str | None = None
+    retrieved: bool
+
+
+class KnowledgeGraphEdgeOut(BaseModel):
+    source: str
+    target: str
+    relationship: str
+
+
+class KnowledgeGraphOut(BaseModel):
+    nodes: list[KnowledgeGraphNodeOut]
+    edges: list[KnowledgeGraphEdgeOut]
+
+
 class RecommendResponse(BaseModel):
     query: str                                   # as sent, in the caller's language
     recommendations: list[RecommendationOut]
     related_standards: list[RelatedStandardOut]
     evidence: list[EvidenceOut]
+    knowledge_graph: KnowledgeGraphOut
     warnings: list[str]
     confidence: str
     # All of these are null/empty for an English query, so an existing client
@@ -160,6 +189,43 @@ def _run_and_build_response(query: str, top_k: int, language: str | None) -> Rec
         language=language,
     )
     response = result.response
+    graph_nodes: dict[int, KnowledgeGraphNodeOut] = {}
+    graph_edges: dict[tuple[int, int, str], KnowledgeGraphEdgeOut] = {}
+
+    for evidence in result.evidence:
+        if evidence.record:
+            graph_nodes[evidence.kys_id] = KnowledgeGraphNodeOut(
+                id=str(evidence.kys_id),
+                standard_id=evidence.record.is_number,
+                title=evidence.record.title,
+                status=evidence.record.status,
+                retrieved=True,
+            )
+
+    for evidence in result.evidence:
+        if not evidence.record:
+            continue
+        for relation in evidence.kg_relations:
+            related_record = app_state["store"].get(relation.kys_id)
+            graph_nodes.setdefault(
+                relation.kys_id,
+                KnowledgeGraphNodeOut(
+                    id=str(relation.kys_id),
+                    standard_id=relation.is_number,
+                    title=related_record.title if related_record else relation.title,
+                    status=related_record.status if related_record else None,
+                    retrieved=False,
+                ),
+            )
+            source_id, target_id = evidence.kys_id, relation.kys_id
+            if relation.relationship in {"REFERENCED_BY", "REPLACES"}:
+                source_id, target_id = target_id, source_id
+            graph_edges[(source_id, target_id, relation.relationship)] = KnowledgeGraphEdgeOut(
+                source=str(source_id),
+                target=str(target_id),
+                relationship=relation.relationship,
+            )
+
     return RecommendResponse(
         query=response.query,
         recommendations=[
@@ -191,6 +257,10 @@ def _run_and_build_response(query: str, top_k: int, language: str | None) -> Rec
             )
             for i, e in enumerate(result.evidence)
         ],
+        knowledge_graph=KnowledgeGraphOut(
+            nodes=list(graph_nodes.values()),
+            edges=list(graph_edges.values()),
+        ),
         warnings=response.warnings,
         confidence=response.confidence,
         query_english=response.query_english,
@@ -229,7 +299,7 @@ async def recommend_document(
     if not contents:
         raise HTTPException(status_code=400, detail="Uploaded file is empty.")
 
-    from is_advisor.documents import ScannedPdfError, read_document
+    from Semantic_Analysis.is_advisor.documents import ScannedPdfError, read_document
 
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
         tmp.write(contents)
@@ -245,6 +315,69 @@ async def recommend_document(
         raise HTTPException(status_code=422, detail="No extractable text found in the uploaded file.")
 
     return _run_and_build_response(text, top_k, language)
+
+
+@app.post("/tender-health")
+async def tender_health(
+    file: UploadFile = File(...),
+) -> dict:
+    """Audit an uploaded tender for cited and outdated Indian Standards."""
+    suffix = Path(file.filename or "").suffix.lower()
+    if suffix not in (".pdf", ".txt"):
+        raise HTTPException(status_code=400, detail="Only .pdf and .txt files are supported.")
+
+    contents = await file.read()
+    if len(contents) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)}MB limit.",
+        )
+    if not contents:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
+    from Semantic_Analysis.is_advisor.documents import ScannedPdfError, read_document
+
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp.write(contents)
+        tmp_path = Path(tmp.name)
+
+    try:
+        text = read_document(tmp_path)
+    except ScannedPdfError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+    if not text.strip():
+        raise HTTPException(
+            status_code=422,
+            detail="No extractable text found in the uploaded file.",
+        )
+
+    results = app_state["health_retriever"].search_document(text)
+    report = build_health_report(results)
+
+    return {
+        "total_items": report.total_items,
+        "items_with_citations": report.items_with_citations,
+        "items_without_citations": report.items_without_citations,
+        "unique_standards_cited": report.unique_standards_cited,
+        "current_standards": report.current_standards,
+        "outdated_standards": report.outdated_standards,
+        "standards": [
+            {
+                "cited_as": standard.cited_as,
+                "is_number": standard.is_number,
+                "title": standard.title,
+                "status": standard.status,
+                "replaced_by_is": standard.replaced_by_is,
+                "successor_parts": standard.successor_parts,
+                "note": standard.note,
+            }
+            for standard in report.standards
+        ],
+        "items_without_standards": report.items_without_standards,
+    }
 
 
 @app.get("/health")

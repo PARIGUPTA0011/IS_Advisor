@@ -16,6 +16,7 @@ separate question, measured by hand in README section 14, not here.
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -323,7 +324,10 @@ def test_line_items_carry_both_languages(stub) -> None:
     check("language recorded", item.language, "hin_Deva")
     check("translated flag set", item.translated, True)
     check("citation extracted through translation", item.cited_is, ["IS 1786"])
-    check("retrieval text is english", "आरसीसी" in item.text, False)
+    # Any Devanagari at all, not one word: this check used to pass only because
+    # strip_boilerplate was deleting Indic vowel signs ("आरसीसी" -> "आरस स"),
+    # which hid that the line had not been translated.
+    check("retrieval text is english", bool(re.search(r"[ऀ-ॿ]", item.text)), False)
 
     # multilingual=False must be the old path exactly, which is what the
     # evaluation scripts rely on.

@@ -15,7 +15,12 @@ export type Confidence = "high" | "medium" | "low" | "insufficient_evidence" | "
 export type StandardStatus = "current" | "withdrawn" | null;
 
 /** One KG relationship type, exactly as Neo4j/rag/kg_client.py produces it. */
-export type Relationship = "REFERENCES" | "REFERENCED_BY" | "REPLACED_BY" | "REPLACES";
+export type Relationship =
+  | "REFERENCES"
+  | "REFERENCED_BY"
+  | "REPLACED_BY"
+  | "REPLACES"
+  | "NORMATIVELY_REFERENCES";
 
 /** One relevance tier, exactly as Semantic_Analysis/is_advisor/search.py computes it. */
 export type Tier = "Highly relevant" | "Related" | "Possibly relevant";
@@ -44,11 +49,31 @@ export interface EvidenceOut {
   tier: string | null;
 }
 
+export interface KnowledgeGraphNode {
+  id: string;
+  standard_id: string;
+  title: string | null;
+  status: StandardStatus;
+  retrieved: boolean;
+}
+
+export interface KnowledgeGraphEdge {
+  source: string;
+  target: string;
+  relationship: Relationship;
+}
+
+export interface KnowledgeGraphOut {
+  nodes: KnowledgeGraphNode[];
+  edges: KnowledgeGraphEdge[];
+}
+
 export interface RecommendResponse {
   query: string;
   recommendations: RecommendationOut[];
   related_standards: RelatedStandardOut[];
   evidence: EvidenceOut[];
+  knowledge_graph: KnowledgeGraphOut;
   warnings: string[];
   confidence: Confidence;
 }

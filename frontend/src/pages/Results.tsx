@@ -6,6 +6,7 @@ import { ConfidenceMeter } from "../components/common/ConfidenceMeter";
 import { EmptyState } from "../components/common/EmptyState";
 import { RecommendationCard } from "../components/results/RecommendationCard";
 import { EvidenceGrid } from "../components/results/EvidenceGrid";
+import { KnowledgeGraphView } from "../components/results/KnowledgeGraphView";
 import { WarningsBanner } from "../components/results/WarningsBanner";
 import type { RecommendResponse } from "../types/api";
 
@@ -97,6 +98,13 @@ export function Results() {
             />
           )}
         </div>
+
+        {result.knowledge_graph && (
+          <KnowledgeGraphView
+            nodes={result.knowledge_graph.nodes}
+            edges={result.knowledge_graph.edges}
+          />
+        )}
 
         <EvidenceGrid evidence={result.evidence} recommendations={result.recommendations} />
       </div>
