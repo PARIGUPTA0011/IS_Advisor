@@ -55,6 +55,7 @@
 
   --accent-primary: var(--color-royal-600);
   --accent-primary-hover: var(--color-royal-700);
+  --brand-gradient: linear-gradient(135deg, #5457e8 0%, #159a9c 100%);
   --accent-gold: var(--color-gold-500);
   --accent-gold-soft: color-mix(in oklab, var(--color-gold-400) 18%, transparent);
 
@@ -170,6 +171,10 @@ body {
 ::-webkit-scrollbar-thumb {
   background: var(--border-strong);
   border-radius: 999px;
+}
+
+.bg-brand-gradient {
+  background: var(--brand-gradient);
 }
 
 .glass-panel {
