@@ -1,8 +1,6 @@
 {
-  "doc_fingerprint": "871e81622193eb34",
-  "embedding_fingerprint": "871e81622193eb34",
+  "doc_fingerprint": "20b54fd155ded8e4",
+  "embedding_fingerprint": "20b54fd155ded8e4",
   "n_docs": 23341,
-  "model": "BAAI/bge-small-en-v1.5",
-  "fallback_model": "intfloat/multilingual-e5-small",
-  "fallback_fingerprint": "871e81622193eb34"
+  "model": "BAAI/bge-small-en-v1.5"
 }

@@ -23,7 +23,15 @@
     "uploadTitle": "Drop a tender here",
     "uploadSubtitle": "PDF or TXT, up to 25MB",
     "backendOffline": "The IS-Advisor backend isn't reachable right now. Start it and refresh.",
-    "checking": "Checking backend..."
+    "checking": "Checking backend...",
+    "steps": {
+      "oneTitle": "Define your spec",
+      "oneBody": "Describe requirements or upload a tender.",
+      "twoTitle": "Retrieve knowledge",
+      "twoBody": "Search the standards corpus and graph.",
+      "threeTitle": "Get recommendations",
+      "threeBody": "Review evidence-backed standards."
+    }
   },
   "analyze": {
     "modeText": "Describe Procurement Requirement",

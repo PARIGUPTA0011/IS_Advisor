@@ -128,26 +128,7 @@ def load_curated_aliases() -> pd.Series:
     return grouped
 
 
-def load_scope_text() -> pd.Series:
-    """Clause 1 scope text keyed by kys_id, gated on status and title overlap.
-
-    Optional file. Coverage is partial by design - adopted IS/ISO and IS/IEC
-    previews carry only the National Foreword - so an absent key is normal.
-    """
-    if not config.SCOPE_TEXT_CSV.exists():
-        return pd.Series(dtype="object")
-    scope = pd.read_csv(config.SCOPE_TEXT_CSV, usecols=["kys_id", "scope_status", "title_overlap", "scope_text"])
-    keep = scope[
-        (scope["scope_status"] == "ok")
-        & (scope["title_overlap"] >= config.SCOPE_MIN_TITLE_OVERLAP)
-    ]
-    text = keep.set_index("kys_id")["scope_text"].map(clean_text)
-    return text[text != ""]
-
-
-def build_corpus(
-    use_past_editions: bool = True, use_aliases: bool = True, use_scope: bool = True
-) -> pd.DataFrame:
+def build_corpus(use_past_editions: bool = True, use_aliases: bool = True) -> pd.DataFrame:
     """Assemble the document text every retriever reads."""
     df = load_standards()
     index = build_index_frame(df)
@@ -169,38 +150,29 @@ def build_corpus(
     curated = load_curated_aliases() if use_aliases else pd.Series(dtype="object")
     index["_aliases"] = index["is_base_id"].map(curated).fillna("") if len(curated) else ""
 
-    scope = load_scope_text() if use_scope else pd.Series(dtype="object")
-    index["scope_text"] = index["kys_id"].map(scope).fillna("") if len(scope) else ""
-
     # Never embed the bare title: "Specification for Bund Former" means nothing
     # on its own, the classification path is what carries the domain.
-    described = [
+    index["doc_text"] = [
         _join(title, common, aspect, classification)
         for title, common, aspect, classification in zip(
             index["_title_text"], index["_common_text"], index["_aspect_text"],
             index["_classification"],
         )
     ]
-    # Scope text goes into the embedding, so the vector describes what the
-    # standard covers and not only what it is called.
-    index["doc_text"] = [_join(doc, scope) for doc, scope in zip(described, index["scope_text"])]
     # Trade names and historic wording go to BM25 only. "TMT bar" is a token to
     # match exactly, and pasting a dozen synonyms into a 20-word title would
     # drag the embedding away from what the standard is actually about.
-    # Scope text is deliberately kept out of this string: only some documents
-    # have it, and BM25 length normalisation would penalise exactly those. It
-    # gets its own index instead (SCOPE_TEXT.md section 3).
     index["lexical_text"] = [
         _join(doc, past, aliases, str(number))
         for doc, past, aliases, number in zip(
-            described, index["_past_vocab"], index["_aliases"], index["is_number"]
+            index["doc_text"], index["_past_vocab"], index["_aliases"], index["is_number"]
         )
     ]
 
     keep = [
         "kys_id", "is_number", "is_base_id", "is_year", "title_clean", "common_title",
         "aspect", "group", "sub_group", "sub_sub_group", "dept_code", "committee_code",
-        "mandatory_cert", "qco_status", "doc_text", "lexical_text", "scope_text",
+        "mandatory_cert", "qco_status", "doc_text", "lexical_text",
     ]
     out = index[keep].copy()
     out["title_display"] = index["_title_text"]
