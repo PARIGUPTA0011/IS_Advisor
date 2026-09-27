@@ -8,6 +8,7 @@ import { Results } from "./pages/Results";
 import { Settings } from "./pages/Settings";
 import { EntryPoint } from "./pages/EntryPoint";
 import { About } from "./pages/About";
+import TenderHealth from "./pages/TenderHealth";
 
 function App() {
   return (
@@ -18,6 +19,7 @@ function App() {
             <Route element={<AppLayout />}>
               <Route index element={<Dashboard />} />
               <Route path="analyze" element={<Analyze />} />
+              <Route path="tender-health" element={<TenderHealth />} />
               <Route path="results" element={<Results />} />
               <Route path="history" element={<EntryPoint />} />
               <Route path="settings" element={<Settings />} />
