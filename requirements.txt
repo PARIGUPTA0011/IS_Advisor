@@ -72,3 +72,28 @@ langdetect==1.0.9
 # says so in GET /health. IndicTransToolkit (its official preprocessor) needs a
 # C compiler to build and is optional - translate.py falls back to prepending
 # the language tags itself.
+
+# speech/: dictated queries. faster-whisper runs on CTranslate2, NOT torch, which
+# is why speech input did not disturb the torch/numpy/transformers/sentencepiece
+# versions above - verified with `pip install --dry-run` before installing.
+#
+# Two pins here are not cosmetic, both found by the thing crashing:
+#
+#   ctranslate2==4.6.0  4.8.2 segfaults when a Whisper model is constructed on
+#                       this machine (Windows, Python 3.11, Ryzen 5 5500U) - no
+#                       exception, exit 139. 4.7.0 fails differently, looking for
+#                       a ROCm SDK path that Windows wheels do not ship. 4.6.0 is
+#                       the newest of the 4.x line that loads and transcribes.
+#   setuptools<81       ctranslate2 4.6.0 imports `pkg_resources`, which
+#                       setuptools removed in 81. With setuptools 84 installed,
+#                       importing ctranslate2 fails outright.
+#
+# onnxruntime arrives as a faster-whisper dependency and **segfaults on import**
+# here, so voice-activity detection is off by default (speech/config.py explains
+# it). Nothing else in the speech path touches onnxruntime, so transcription is
+# unaffected.
+faster-whisper==1.2.1
+ctranslate2==4.6.0
+setuptools<81
+# Optional: only needed for `--mic SECONDS`. `--audio FILE` works without it.
+sounddevice==0.5.6

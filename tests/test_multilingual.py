@@ -226,6 +226,7 @@ class StubBackend:
     name = "stub"
     PHRASES = {
         "आरसीसी कार्य के लिये टीएमटी सरिया": "TMT bar for RCC work",
+        "आरसीसी कार्य के लिये टीएमटी सरिया के अनुसार": "TMT bar for RCC work as per",
         "बाहर लगाने के लिये की स्टेनलेस स्टील पानी की टंकी": "stainless steel water tank for outdoor use",
     }
 
@@ -244,7 +245,13 @@ class StubBackend:
 
     def translate(self, texts, source, target):
         self.calls += 1
-        return [self.PHRASES.get(text.strip(), f"[{target}] {text}") for text in texts]
+        # The fallback deliberately does NOT echo the input. Echoing it made an
+        # unknown phrase look like a query-layer bug - Devanagari appearing in
+        # the English rendering - when it was only the stub repeating itself.
+        return [
+            self.PHRASES.get(text.strip(), f"[{target}] untranslated phrase")
+            for text in texts
+        ]
 
 
 class StubTranslator(translate.Translator):
@@ -497,9 +504,17 @@ def test_stale_vectors_detect_an_encoder_swap() -> None:
             # Same text, different encoder. The fingerprint cannot see this -
             # the text did not change - and the vectors are the right shape
             # with the wrong meaning.
+            # Any encoder that is not the configured one. Derived rather than
+            # hardcoded: this test used to name bge-small-en-v1.5 explicitly and
+            # silently stopped testing anything the day config.BI_ENCODER became
+            # that model.
+            other_encoder = (
+                "some-other/encoder" if config.BI_ENCODER != "some-other/encoder"
+                else "yet-another/encoder"
+            )
             config.INDEX_META.write_text(
                 json.dumps({
-                    "model": "BAAI/bge-small-en-v1.5",
+                    "model": other_encoder,
                     "embedding_fingerprint": fingerprint(frame["doc_text"].tolist()),
                     "n_docs": 1,
                 }),

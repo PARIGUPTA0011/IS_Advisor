@@ -3,6 +3,8 @@
     python Semantic_Analysis/03_search.py "TMT bars Fe500D for RCC work"
     python Semantic_Analysis/03_search.py --file tender.txt --json out.json
     python Semantic_Analysis/03_search.py --file tender.pdf
+    python Semantic_Analysis/03_search.py --audio spec.m4a      # transcribed locally
+    python Semantic_Analysis/03_search.py --mic 8               # record and search
     echo "..." | python Semantic_Analysis/03_search.py --json -
 
 A query in any of the 22 scheduled Indian languages is answered in that same
@@ -126,9 +128,43 @@ def main() -> int:
         action="store_true",
         help="English-only path: no detection, no translation, no localised output",
     )
+    parser.add_argument(
+        "--audio", type=Path,
+        help="transcribe this audio file and search that (wav/mp3/m4a, transcribed "
+             "locally with faster-whisper - no API, no upload)",
+    )
+    parser.add_argument(
+        "--mic", type=float, metavar="SECONDS",
+        help="record this many seconds from the microphone and search that",
+    )
     args = parser.parse_args()
 
-    if args.file:
+    spoken_language = None
+    if args.audio and args.mic:
+        parser.error("use either --audio or --mic, not both")
+
+    if args.audio or args.mic:
+        # Imported lazily: a text or PDF run should not load the speech stack.
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+        from speech import SpeechUnavailable, render_transcript, transcribe
+        from speech.record import MicrophoneUnavailable
+
+        try:
+            transcript = transcribe(
+                audio_path=args.audio, mic_seconds=args.mic, language=args.lang
+            )
+        except (SpeechUnavailable, MicrophoneUnavailable, FileNotFoundError, ValueError) as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 2
+
+        # Before the results, always - see speech/__init__.py.
+        print(render_transcript(transcript))
+        if not transcript.ok:
+            print(f"error: {transcript.note or 'nothing was transcribed'}", file=sys.stderr)
+            return 2
+        document = transcript.text
+        spoken_language = transcript.language
+    elif args.file:
         try:
             document = read_document(args.file)
         except ScannedPdfError as error:
@@ -149,7 +185,7 @@ def main() -> int:
         document,
         top_k=args.top_k,
         use_reranker=args.rerank,
-        language=args.lang,
+        language=args.lang or spoken_language,
         multilingual=False if args.no_translate else None,
     )
 

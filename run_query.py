@@ -4,6 +4,8 @@ Quick manual test runner for the RAG pipeline.
 Usage:
     python run_query.py "LED street lights, 90W, 230V AC, outdoor use, IP66 protection."
     python run_query.py "90W LED street light IP66" --lang hi
+    python run_query.py --audio query.m4a              # wav/mp3/m4a, transcribed locally
+    python run_query.py --mic 8                        # record 8 seconds and ask that
     python run_query.py "\u0938\u0921\u093c\u0915 \u0915\u0940 \u092c\u0924\u094d\u0924\u0940 90W IP66"
 
 The language is detected from the query; `--lang` forces it, which is also how
@@ -13,7 +15,9 @@ three spellings works - a plain name (`--lang Hindi`), an ISO code
 frontend sends and the value typed here are interchangeable.
 """
 
+import argparse
 import sys
+from pathlib import Path
 
 # Before the model stack is imported, so its import-time warnings are caught.
 # See quiet_warnings.py for what is hidden and why; IS_ADVISOR_ALL_WARNINGS=1
@@ -38,18 +42,62 @@ from rag.retriever_factory import get_retriever
 
 
 def main() -> None:
-    if len(sys.argv) < 2:
-        print('Usage: python run_query.py "your query here" [--lang hi]')
-        sys.exit(1)
+    parser = argparse.ArgumentParser(
+        description="Ask IS-Advisor for the standards that apply to a specification.",
+    )
+    parser.add_argument("text", nargs="*", help="the query, as text")
+    parser.add_argument(
+        "--lang",
+        help="language of the question and the answer: a name (Hindi), an ISO code "
+             "(hi) or a FLORES code (hin_Deva). Detected when omitted; with --audio "
+             "or --mic it also overrides what Whisper heard",
+    )
+    parser.add_argument(
+        "--audio", type=Path,
+        help="transcribe this audio file and ask that (wav/mp3/m4a, transcribed "
+             "locally with faster-whisper - no API, no upload)",
+    )
+    parser.add_argument(
+        "--mic", type=float, metavar="SECONDS",
+        help="record this many seconds from the microphone and ask that",
+    )
+    args = parser.parse_args()
 
-    query = sys.argv[1]
-    language = None
-    if "--lang" in sys.argv:
-        index = sys.argv.index("--lang")
-        if index + 1 >= len(sys.argv):
-            print("--lang needs a language, for example --lang hi or --lang Hindi")
-            sys.exit(1)
-        language = sys.argv[index + 1]
+    language = args.lang
+    typed = " ".join(args.text).strip()
+
+    if args.audio and args.mic:
+        parser.error("use either --audio or --mic, not both")
+    if not (typed or args.audio or args.mic):
+        parser.error("give a query as text, or --audio FILE, or --mic SECONDS")
+
+    query = typed
+    if args.audio or args.mic:
+        # The speech layer is imported here rather than at module scope so that a
+        # text-only run never pays for it, and an install without faster-whisper
+        # keeps working exactly as before.
+        from speech import SpeechUnavailable, render_transcript, transcribe
+        from speech.record import MicrophoneUnavailable
+
+        try:
+            transcript = transcribe(
+                audio_path=args.audio, mic_seconds=args.mic, language=language
+            )
+        except (SpeechUnavailable, MicrophoneUnavailable, FileNotFoundError, ValueError) as error:
+            print(f"error: {error}", file=sys.stderr)
+            sys.exit(2)
+
+        # Printed before anything else: the transcript is the least reliable link
+        # in the chain and the only one a user can check at a glance.
+        print(render_transcript(transcript))
+        print()
+        if not transcript.ok:
+            print(f"error: {transcript.note or 'nothing was transcribed'}", file=sys.stderr)
+            sys.exit(2)
+
+        query = f"{transcript.text} {typed}".strip() if typed else transcript.text
+        # Whisper's language, already checked against the transcript's script.
+        language = language or transcript.language
 
     store = MetadataStore()
     retriever = get_retriever(store)
