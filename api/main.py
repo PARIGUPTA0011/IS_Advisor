@@ -26,6 +26,7 @@ from rag.llm_client import get_llm_client
 from rag.metadata_store import MetadataStore
 from rag.pipeline import run_query
 from rag.retriever_factory import get_retriever
+from Semantic_Analysis.is_advisor.search import load_retriever
 from api.tender_health import build_health_report
 
 _SEMANTIC_ANALYSIS_ROOT = Path(__file__).resolve().parent.parent / "Semantic_Analysis"
@@ -43,6 +44,11 @@ async def lifespan(app: FastAPI):
     store = MetadataStore()
     app_state["store"] = store
     app_state["retriever"] = get_retriever(store)
+    app_state["health_retriever"] = load_retriever(
+        with_dense=False,
+        with_reranker=False,
+        with_spacy=True,
+    )
     app_state["kg"] = Neo4jKGClient.from_env()
     app_state["llm"] = get_llm_client()
     yield
@@ -233,7 +239,7 @@ async def tender_health(
             detail="No extractable text found in the uploaded file.",
         )
 
-    results = app_state["retriever"].search_document(text)
+    results = app_state["health_retriever"].search_document(text)
     report = build_health_report(results)
 
     return {
