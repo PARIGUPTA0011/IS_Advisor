@@ -25,6 +25,10 @@ class DirectRecommendation:
     reason: str
     status: str | None = None
     evidence_tag: str | None = None
+    # Filled in after grounding validation when the query was not in English.
+    # `standard_id` is never translated - it is an identifier.
+    reason_localized: str | None = None
+    status_localized: str | None = None
 
 
 @dataclass
@@ -33,15 +37,33 @@ class RelatedStandard:
     relationship: str
     related_to: str
     reason: str | None = None
+    # The relationship name stays in English: the grounding validator matches
+    # it against the knowledge graph's own REFERENCES / REPLACED_BY labels.
+    reason_localized: str | None = None
+    # Filled from the metadata store after validation, never by the model. The
+    # title is what the standard actually covers, and `status` is what makes a
+    # superseded edition visible as one instead of reading like a live
+    # recommendation.
+    title: str | None = None
+    status: str | None = None
 
 
 @dataclass
 class RecommendationResponse:
-    query: str
+    query: str                   # as the user typed it, in their language
     direct_recommendations: list[DirectRecommendation] = field(default_factory=list)
     related_standards: list[RelatedStandard] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     confidence: str = "unknown"  # "high" | "medium" | "low" | "insufficient_evidence" | "parse_error"
+    # All three are None/empty for an English query, so nothing about the
+    # English response shape changes.
+    query_english: str | None = None     # what retrieval and the LLM saw
+    language: dict | None = None         # how the language was detected, and which
+    warnings_localized: list[str] = field(default_factory=list)
+    # Specification values in the query that no evidence line states - computed
+    # by rag/spec_coverage.py, never by the model. Empty is a real answer: it
+    # means every value asked for does appear in the evidence.
+    unsupported_spec_terms: list[str] = field(default_factory=list)
 
 
 RESPONSE_FORMAT_INSTRUCTIONS = """
@@ -52,13 +74,15 @@ Respond with ONLY a single valid JSON object (no markdown fences, no commentary 
     {"standard_id": "<IS number, copied exactly from the evidence>", "status": "<current|withdrawn, from evidence>", "reason": "<why this standard applies, tied to specific evidence>", "evidence_tag": "<the [N] tag this came from>"}
   ],
   "related_standards": [
-    {"standard_id": "<IS number>", "relationship": "<REFERENCES|REFERENCED_BY|REPLACED_BY|REPLACES, copied exactly from KNOWLEDGE GRAPH EVIDENCE>", "related_to": "<the standard_id it is related to>", "reason": "<short reason>"}
+    {"standard_id": "<IS number>", "relationship": "<REFERENCES|REFERENCED_BY|REPLACED_BY|REPLACES, copied exactly from KNOWLEDGE GRAPH EVIDENCE>", "related_to": "<the standard_id it is related to>", "reason": "<what THIS standard covers, from its own title in the evidence, and why that matters to the query - not a restatement of the relationship>"}
   ],
   "warnings": ["<any caveat: withdrawn status, insufficient evidence, ambiguous query, etc.>"],
   "confidence": "<one of: high, medium, low, insufficient_evidence>"
 }
 
 Every standard_id must be copied character-for-character from the evidence above - never invent one. If there are no direct recommendations, return an empty list and set confidence to "insufficient_evidence". Output nothing but the JSON object.
+
+Each related_standards reason must be specific to that standard. "Referenced by the recommended standard" or "Provides related requirements" describes the edge, not the standard, and is the same sentence for every entry - which tells the reader nothing about which of them to go and read. Each KNOWLEDGE GRAPH EVIDENCE line gives you that standard's title; say what it covers. Two entries must not share a reason.
 """
 
 

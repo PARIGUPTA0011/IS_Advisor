@@ -22,6 +22,7 @@ model download. Metadata is a boost, never a filter.
 | 3 Semantic standard search | done, measured, ablated |
 | 4 Ranking | done — fusion, boosts, 0–1 score, relevance tiers (item 3) |
 | Requirement-match ranking signal | **built, measured, removed** — item 5 |
+| Multilingual input and output | done — item 6, README section 14 |
 
 Items 1 to 4 did not touch retrieval, and the numbers confirmed it at the time: the shipping
 configuration measured Recall@5 = 0.883 and Recall@10 = 0.942 on 120 items, unchanged. The current
@@ -87,15 +88,20 @@ is far too low for a requirement-match ranking signal, and no requirement field 
 ## Item 3 — Relevance tiers (done)
 
 The existing 0–1 score is banded into `Highly relevant`, `Related` and `Possibly relevant`, with
-thresholds fitted by `06_calibrate_tiers.py` rather than guessed: 0.96 and 0.84. 64.0% of gold
-answers land in the top tier, 30.7% in the middle, 5.3% in the lowest. 2.9% of non-gold candidates
-reach the top tier, which is an upper bound on false positives rather than a measurement of them.
+thresholds fitted by `06_calibrate_tiers.py` rather than guessed. They have since been re-fitted
+once, after item 6 changed the bi-encoder: **0.96 and 0.84 became 0.95 and 0.68**, because a new
+encoder produces a new score distribution and a threshold fitted to the old one stops meaning what it
+was fitted to mean. On the current index, 72.9% of gold answers land in the top tier, 22.0% in the
+middle and 5.1% in the lowest, with 4.6% of non-gold candidates reaching the top tier - an upper
+bound on false positives rather than a measurement of them.
 
 Cited standards and pinned successor parts are always top tier regardless of the thresholds.
 
 One trap worth recording: adding a new boost to the score ceiling depresses every score and silently
 invalidates fitted thresholds. The ceiling now counts only boosts that are actually active, and the
-calibration was re-confirmed after item 5 was removed.
+calibration was re-confirmed after item 5 was removed. **Changing the encoder does the same thing for
+the same reason**, and re-running `06_calibrate_tiers.py --apply` is therefore part of that change
+rather than an optional follow-up.
 
 ---
 
@@ -134,14 +140,70 @@ ranking, and the README says so.
 
 ---
 
+## Item 6 — Multilingual input and output (done)
+
+Any of the 22 scheduled Indian languages in, the same language out. The layer lives in the repo-root
+`multilingual/` package, shared with the RAG workstream, and has its own README. README section 14
+is what it means for retrieval.
+
+Four things had to change, and the one that mattered most was not the embedding model:
+
+1. **The keyword tokenizer.** `[a-z0-9]+` discarded every non-Latin character, so
+   `'आरसीसी कार्य के लिये टीएमटी सरिया 500डी'` tokenised to `['500']` and `'கம்பி'` to `[]`. BM25 is
+   the stronger retriever on this corpus, so an Indic query was reaching the weaker half of the
+   system at best. 65 of 23,341 documents tokenise differently now (0.28%), which is why section 7
+   was re-measured rather than assumed.
+2. **The bi-encoder**, `BAAI/bge-small-en-v1.5` → `intfloat/multilingual-e5-small`. Same 384
+   dimensions, so the index kept its shape and its 35 MB. Two traps came with it: e5 needs a
+   *document* prefix as well as a query prefix, and the old prefix logic sniffed the model name
+   (`"bge" in ...`) so it would have silently applied none; and the stale-vector guard compared only
+   the text fingerprint, which cannot see an encoder swap - the text does not change, and the vectors
+   are left the right shape with the wrong meaning. `index_meta.json` now records the model and the
+   guard compares it.
+3. **The query layer.** Splitting runs on the text as typed, because it reads punctuation;
+   everything after splitting runs on an English translation, because everything after splitting is
+   English-specific.
+4. **An output layer**, because the corpus cannot supply one: 33,803 of 35,524 standards are marked
+   English. A same-language answer is produced, not looked up. IS numbers and official titles are
+   never translated - a tender has to quote the English title - and a gloss is offered beside them.
+
+### Two decisions worth not relitigating
+
+**Romanised input is not machine-translated.** "TMT sariya Fe500D chahiye" already retrieves through
+the curated trade names in `data/aliases.csv`, which section 7 measures at +0.115 Recall@5. Sending
+it to a model trained on Devanagari would trade a measured path for an unmeasured one. It is detected
+as Hindi, searched as typed, and answered in Devanagari.
+
+**Localisation runs last, after the RAG grounding validator.** The validator matches IS numbers and
+clause patterns in the model's prose, so translating first would mean validating nothing while
+appearing to validate everything.
+
+### What is not done
+
+**IndicTrans2 is gated.** Both checkpoints are `gated=auto` on HuggingFace (confirmed against their
+API), so they need an account, the terms accepted, and `HF_TOKEN`. They stay wired and preferred -
+they are the better models for these languages, and the only ones carrying Bodo, Dogri, Konkani and
+Santali - but the shipping default is `facebook/nllb-200-distilled-600M`. `GET /health` reports
+which backend actually loaded.
+
+**No measured retrieval quality in any language but English.** See the first item below.
+
+---
+
 ## Still open, and still the highest value
 
 Both were already named in README section 13 and nothing built here substitutes for either.
 
-1. **Replace the hand-written evaluation set with real tender lines.** Every number in this
+1. **A multilingual evaluation set.** `data/eval_set.jsonl` is English, so every number in this
+   workstream measures English input. Translating those 121 items and having a speaker check them
+   would measure the multilingual path end to end for the first time - today the retrieval side is
+   measured and the translation in front of it is not.
+2. **Replace the hand-written evaluation set with real tender lines.** Every number in this
    workstream is an upper bound until this is done, and the same corpus is the strongest vocabulary
-   source available.
-2. **Scope-text extraction from the standard PDFs.** Clause 1 is the missing input behind the
+   source available. Real *multilingual* tender lines would also be the honest way to grow
+   `../multilingual/data/glossary.csv`, which is a 76-row seed written where the native term was
+   confidently known.
+3. **Scope-text extraction from the standard PDFs.** Clause 1 is the missing input behind the
    requirement-match result above, behind the multi-part misses in README section 7, and behind the
    absence of any scope-match component. `pdfplumber` is now already a dependency, so the path is
    open.
@@ -155,3 +217,9 @@ Smaller, genuinely untried:
   and measures as a loss; that is a verdict on this model, not on reranking.
 - **Under-splitting of run-on prose.** The rules handle bullets, numbering, table rows and
   specification blocks. One paragraph hiding three products is still one line item.
+- **Transliteration for romanised input.** Romanised Indic is searched as typed today. Transliterating
+  it to native script would let the translation path see it too, and would separate romanised Marathi
+  from romanised Hindi, which marker words cannot do reliably.
+- **Curated labels beyond Hindi.** Tier names and statuses are hand-translated for Hindi and
+  machine-translated elsewhere. Two words out of context is where MT is weakest; a speaker of each
+  language reviewing about twenty strings would fix it permanently.

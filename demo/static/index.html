@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IS-Advisor</title>
+<style>
+:root {
+  --bg: #f6f7f9; --surface: #ffffff; --surface-2: #f0f2f5; --border: #dde1e7;
+  --text: #1b1f24; --muted: #5d6673; --accent: #1f5fae; --accent-soft: #e5eefa;
+  --good: #1d7a46; --good-soft: #e3f4ea; --warn: #9a5b00; --warn-soft: #fbf0dc;
+  --bad: #b3261e; --bad-soft: #fbe5e3; --info: #5a3fa0; --info-soft: #eee8fa; --on-accent: #ffffff;
+  --mono: ui-monospace, "Cascadia Mono", Consolas, "Liberation Mono", monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111418; --surface: #1a1e24; --surface-2: #222831; --border: #2f3640;
+    --text: #e6e9ee; --muted: #9aa4b1; --accent: #7fb0f0; --accent-soft: #1d2b3d;
+    --good: #6fcf97; --good-soft: #17301f; --warn: #f0b95a; --warn-soft: #33270f;
+    --bad: #f28b82; --bad-soft: #3a1c1a; --info: #b9a3f5; --info-soft: #2a2340; --on-accent: #0e1a2a;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111418; --surface: #1a1e24; --surface-2: #222831; --border: #2f3640;
+  --text: #e6e9ee; --muted: #9aa4b1; --accent: #7fb0f0; --accent-soft: #1d2b3d;
+  --good: #6fcf97; --good-soft: #17301f; --warn: #f0b95a; --warn-soft: #33270f;
+  --bad: #f28b82; --bad-soft: #3a1c1a; --info: #b9a3f5; --info-soft: #2a2340; --on-accent: #0e1a2a;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 var(--sans); }
+.wrap { max-width: 1100px; margin: 0 auto; padding: 24px 16px 64px; }
+header { display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline; justify-content: space-between; margin-bottom: 20px; }
+h1 { font-size: 26px; margin: 0; letter-spacing: -0.01em; }
+h1 span { color: var(--accent); }
+.subtitle { color: var(--muted); margin: 2px 0 0; }
+.pills { display: flex; flex-wrap: wrap; gap: 6px; }
+.pill { font-size: 12px; padding: 3px 10px; border-radius: 999px; background: var(--surface-2); color: var(--muted); border: 1px solid var(--border); }
+.pill.on { color: var(--good); background: var(--good-soft); border-color: transparent; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+textarea { width: 100%; min-height: 170px; resize: vertical; padding: 12px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--surface-2); color: var(--text); font: 13px/1.5 var(--mono); }
+textarea:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; align-items: center; }
+button { font: inherit; font-size: 14px; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--surface); color: var(--text); cursor: pointer; }
+button.primary { background: var(--accent); color: var(--on-accent); border-color: transparent; font-weight: 600; }
+button:disabled { opacity: .55; cursor: progress; }
+.hint { color: var(--muted); font-size: 13px; }
+.spacer { flex: 1; }
+.summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 20px 0 8px; }
+.stat { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+.stat b { display: block; font-size: 22px; }
+.stat span { color: var(--muted); font-size: 12px; }
+.item { margin-top: 14px; }
+.item-head { display: flex; gap: 10px; align-items: flex-start; }
+.num { flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; font-weight: 600;
+  background: var(--accent-soft); color: var(--accent); }
+.line { font-weight: 600; margin: 2px 0 0; overflow-wrap: anywhere; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 0 38px; }
+.chip { font-size: 12px; padding: 2px 8px; border-radius: 6px; background: var(--surface-2); color: var(--muted); }
+.chip b { color: var(--text); font-weight: 600; }
+.notice { margin: 10px 0 0 38px; padding: 8px 10px; border-radius: 8px; font-size: 13px; }
+.notice.ok { background: var(--good-soft); color: var(--good); }
+.notice.bad { background: var(--bad-soft); color: var(--bad); }
+.notice.neutral { background: var(--surface-2); color: var(--muted); }
+.cands { margin: 12px 0 0 38px; display: grid; gap: 8px; }
+.cand { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: var(--surface); }
+.cand.top { border-color: var(--accent); }
+.cand-row { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.isno { font: 600 14px var(--mono); }
+.title { flex: 1 1 280px; min-width: 0; overflow-wrap: anywhere; }
+.badge { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.t-high { background: var(--good-soft); color: var(--good); }
+.t-rel { background: var(--accent-soft); color: var(--accent); }
+.t-pos { background: var(--surface-2); color: var(--muted); }
+.b-cert { background: var(--warn-soft); color: var(--warn); }
+.b-bad { background: var(--bad-soft); color: var(--bad); }
+.b-info { background: var(--info-soft); color: var(--info); }
+.meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.why { color: var(--muted); font-size: 12px; margin-top: 4px; }
+.score { width: 90px; height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
+.score i { display: block; height: 100%; background: var(--accent); }
+details { margin-top: 8px; }
+summary { cursor: pointer; font-size: 13px; color: var(--accent); }
+.graph { margin-top: 8px; padding: 10px; background: var(--surface-2); border-radius: 8px; font-size: 13px; }
+.graph h4 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.graph ul { margin: 0 0 8px; padding-left: 18px; }
+.graph li { margin: 2px 0; }
+.graph .isno { font-size: 12px; }
+.err { background: var(--bad-soft); color: var(--bad); padding: 10px 12px; border-radius: 8px; margin-top: 12px; }
+.loading { display: none; align-items: center; gap: 8px; color: var(--muted); }
+.loading.on { display: flex; }
+.spin { width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: s 0.8s linear infinite; }
+@keyframes s { to { transform: rotate(360deg); } }
+footer { margin-top: 32px; color: var(--muted); font-size: 13px; }
+footer ol { padding-left: 18px; }
+@media (max-width: 600px) {
+  .chips, .notice, .cands { margin-left: 0; }
+  .score { width: 60px; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>IS-<span>Advisor</span></h1>
+      <p class="subtitle">Applicable Indian Standards for a procurement specification</p>
+    </div>
+    <div class="pills" id="pills"><span class="pill">connecting…</span></div>
+  </header>
+
+  <section class="card">
+    <label for="spec" class="hint">Paste a tender or product specification, or upload a .txt / .pdf file</label>
+    <textarea id="spec" placeholder="e.g. TMT reinforcement bars Fe 500D, 8 mm to 25 mm dia, 45 MT"></textarea>
+    <div class="actions">
+      <button class="primary" id="go">Find applicable standards</button>
+      <button id="sample">Load sample tender</button>
+      <button id="upload">Upload file</button>
+      <input type="file" id="file" accept=".txt,.pdf,text/plain,application/pdf" hidden>
+      <div class="loading" id="loading"><div class="spin"></div><span>Analysing…</span></div>
+      <div class="spacer"></div>
+      <label class="hint">Candidates per item
+        <select id="topk"><option>3</option><option selected>5</option><option>10</option></select>
+      </label>
+    </div>
+    <div id="error"></div>
+  </section>
+
+  <div id="summary"></div>
+  <div id="results"></div>
+
+  <footer>
+    <strong>How it works (offline, no LLM):</strong>
+    <ol>
+      <li>The specification is split into line items; procurement boilerplate and citations are stripped.</li>
+      <li>Hybrid retrieval over 23,341 current, latest-edition standards: keyword (BM25) and a local embedding
+        model that also reads each standard's clause 1 scope, fused by rank.</li>
+      <li>The knowledge graph expands every candidate: its normative references (clause 2), what it replaced,
+        and whether each referenced standard is still current.</li>
+      <li>Standards the tender cites are checked: a withdrawn one is flagged and its current replacement shown.</li>
+    </ol>
+  </footer>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+async function health() {
+  try {
+    const h = await (await fetch("/api/health")).json();
+    const kg = h.kg_backend === "LocalKGClient" ? "Knowledge graph: local" : "Knowledge graph: Neo4j";
+    $("pills").innerHTML =
+      `<span class="pill on">Offline · no LLM</span>` +
+      `<span class="pill ${h.dense_retrieval ? "on" : ""}">Semantic search ${h.dense_retrieval ? "on" : "off"}</span>` +
+      `<span class="pill on">${esc(kg)}</span>` +
+      `<span class="pill">${Number(h.indexed_standards).toLocaleString()} standards indexed</span>`;
+  } catch { $("pills").innerHTML = `<span class="pill">server not reachable</span>`; }
+}
+
+function busy(on) {
+  $("loading").classList.toggle("on", on);
+  for (const id of ["go", "sample", "upload"]) $(id).disabled = on;
+}
+
+function showError(msg) { $("error").innerHTML = msg ? `<div class="err">${esc(msg)}</div>` : ""; }
+
+async function run(request) {
+  showError(""); busy(true);
+  try {
+    const res = await fetch(request.url, request.init);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    if (data.extracted_text) $("spec").value = data.extracted_text;
+    render(data);
+  } catch (e) { showError(e.message); }
+  finally { busy(false); }
+}
+
+function analyzeText() {
+  const text = $("spec").value.trim();
+  if (!text) return showError("Paste a specification first.");
+  run({ url: "/api/analyze", init: { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, top_k: Number($("topk").value) }) } });
+}
+
+const tierClass = (t) => t === "Highly relevant" ? "t-high" : t === "Related" ? "t-rel" : "t-pos";
+
+function versionBadge(s) {
+  if (s.status === "withdrawn") return `<span class="badge b-bad">Withdrawn</span>`;
+  const parts = [`Current · ${s.edition_year ?? "?"} edition`];
+  if (s.reaffirmed_year && s.reaffirmed_year !== s.edition_year)
+    parts.push(`reaffirmed ${s.reaffirmed_year_is_lower_bound ? "≥ " : ""}${s.reaffirmed_year}`);
+  return `<span class="badge t-pos">${esc(parts.join(" · "))}</span>`;
+}
+
+function certBadges(s) {
+  let out = "";
+  if (s.mandatory_certification) out += `<span class="badge b-cert">Mandatory BIS certification</span>`;
+  if (s.qco_status) out += `<span class="badge b-cert">QCO: ${esc(s.qco_status)}${s.qco_date ? " (" + esc(s.qco_date) + ")" : ""}</span>`;
+  if (s.aspect && s.aspect !== "Others") out += `<span class="badge b-info">${esc(s.aspect)}</span>`;
+  return out;
+}
+
+function graphBlock(g, s) {
+  const refs = g.normative_references.map((r) => {
+    const st = r.status === "withdrawn"
+      ? ` <span class="badge b-bad">withdrawn</span>${r.use_instead ? ` → use <span class="isno">${esc(r.use_instead)}</span>` : ""}`
+      : "";
+    return `<li><span class="isno">${esc(r.is_number)}</span> ${esc(r.title)}${st}</li>`;
+  }).join("");
+  const more = g.normative_total > g.normative_references.length
+    ? `<li class="hint">and ${g.normative_total - g.normative_references.length} more</li>` : "";
+  const replaces = g.replaces.length
+    ? `<h4>Supersedes</h4><ul>${g.replaces.map((r) => `<li class="isno">${esc(r.is_number)}</li>`).join("")}</ul>` : "";
+  return `
+    <div class="graph">
+      <h4>Normative references (clause 2) — also required to comply</h4>
+      ${refs ? `<ul>${refs}${more}</ul>` : `<p class="hint">None recorded for this standard.</p>`}
+      ${replaces}
+      <h4>Graph neighbourhood</h4>
+      <p class="hint" style="margin:0">Cites ${g.references_total} standards · cited by ${g.referenced_by_total}
+        · ${esc(s.department || "")} ${s.committee ? "· " + esc(s.committee) : ""}${s.ics ? " · ICS " + esc(s.ics) : ""}</p>
+    </div>`;
+}
+
+function citedBlock(c) {
+  if (c.status === "withdrawn") {
+    const rep = c.current_replacement
+      ? ` Current replacement: <strong>${esc(c.current_replacement.is_number)}</strong> — ${esc(c.current_replacement.title)}.`
+      : (c.replaced_by_is ? ` Recorded replacement: ${esc(c.replaced_by_is)}.` : " No replacement is recorded in the BIS data.");
+    return `<div class="notice bad">Cited <strong>${esc(c.cited_as)}</strong> is withdrawn (${esc(c.is_number || "")}).${rep}</div>`;
+  }
+  if (c.in_index) return `<div class="notice ok">Cited <strong>${esc(c.cited_as)}</strong> is current; latest edition ${esc(c.is_number)}.</div>`;
+  return `<div class="notice neutral">Cited <strong>${esc(c.cited_as)}</strong>: ${esc(c.note)}</div>`;
+}
+
+function reqChips(r) {
+  const chips = [];
+  if (r.product) chips.push(`<span class="chip">product <b>${esc(r.product)}</b></span>`);
+  for (const m of r.material || []) chips.push(`<span class="chip">material <b>${esc(m)}</b></span>`);
+  for (const q of r.quantities || []) chips.push(`<span class="chip">${esc(q.field || "quantity")} <b>${esc(q.raw || q.value + " " + q.unit)}</b></span>`);
+  for (const e of r.environment || []) chips.push(`<span class="chip">use <b>${esc(e)}</b></span>`);
+  for (const p of r.properties || []) chips.push(`<span class="chip">property <b>${esc(p)}</b></span>`);
+  return chips.length ? `<div class="chips">${chips.join("")}</div>` : "";
+}
+
+function render(data) {
+  const items = data.items || [];
+  const cited = items.flatMap((i) => i.cited_standards);
+  const withdrawn = cited.filter((c) => c.status === "withdrawn").length;
+  const certs = items.filter((i) => i.candidates[0]?.standard.mandatory_certification).length;
+  $("summary").innerHTML = `
+    <div class="summary">
+      <div class="stat"><b>${items.length}</b><span>line items read</span></div>
+      <div class="stat"><b>${cited.length}</b><span>standards cited in the text</span></div>
+      <div class="stat"><b style="color:${withdrawn ? "var(--bad)" : "inherit"}">${withdrawn}</b><span>cited standards withdrawn</span></div>
+      <div class="stat"><b>${certs}</b><span>top picks needing mandatory certification</span></div>
+      <div class="stat"><b>${data.seconds ?? "–"} s</b><span>analysis time</span></div>
+    </div>`;
+
+  $("results").innerHTML = items.map((it, n) => {
+    const cands = it.candidates.map((c, k) => `
+      <div class="cand ${k === 0 ? "top" : ""}">
+        <div class="cand-row">
+          <span class="isno">${esc(c.is_number)}</span>
+          <span class="title">${esc(c.title)}</span>
+          <span class="badge ${tierClass(c.tier)}">${esc(c.tier)}</span>
+          <span class="score" title="score ${c.score}"><i style="width:${Math.round(c.score * 100)}%"></i></span>
+        </div>
+        <div class="meta">${versionBadge(c.standard)}${certBadges(c.standard)}</div>
+        <div class="why">${esc(c.why)}</div>
+        <details><summary>Knowledge graph: ${c.graph.normative_total} normative reference${c.graph.normative_total === 1 ? "" : "s"}</summary>
+          ${graphBlock(c.graph, c.standard)}</details>
+      </div>`).join("");
+    return `
+      <section class="card item">
+        <div class="item-head"><div class="num">${n + 1}</div><p class="line">${esc(it.line_item)}</p></div>
+        ${it.line_item_english ? `<div class="notice neutral">Translated for search: ${esc(it.line_item_english)}</div>` : ""}
+        ${reqChips(it.requirements || {})}
+        ${it.cited_standards.map(citedBlock).join("")}
+        <div class="cands">${cands || `<p class="hint">No candidate standards found.</p>`}</div>
+      </section>`;
+  }).join("");
+}
+
+$("go").onclick = analyzeText;
+$("sample").onclick = async () => {
+  const d = await (await fetch("/api/sample")).json();
+  $("spec").value = d.text; analyzeText();
+};
+$("upload").onclick = () => $("file").click();
+$("file").onchange = async (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  if (f.name.toLowerCase().endsWith(".pdf")) {
+    run({ url: "/api/analyze-pdf", init: { method: "POST", headers: { "Content-Type": "application/pdf" }, body: await f.arrayBuffer() } });
+  } else { $("spec").value = await f.text(); analyzeText(); }
+  e.target.value = "";
+};
+$("spec").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) analyzeText(); });
+health();
+</script>
+</body>
+</html>

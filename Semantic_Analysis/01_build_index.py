@@ -1,6 +1,6 @@
 """Build every retrieval artifact from standards.csv.
 
-    python Semantic_Analysis/01_build_index.py            # corpus + BM25 + embeddings
+    python Semantic_Analysis/01_build_index.py            # corpus + both BM25s + embeddings
     python Semantic_Analysis/01_build_index.py --no-dense  # corpus + BM25 only (seconds)
 
 Everything lands in Semantic_Analysis/artifacts/ and is reloaded by
@@ -25,6 +25,10 @@ def main() -> int:
     parser.add_argument("--no-dense", action="store_true", help="skip embeddings (keyword only)")
     parser.add_argument("--no-past-editions", action="store_true", help="drop mined past-edition vocabulary")
     parser.add_argument("--no-aliases", action="store_true", help="drop the curated trade-name list")
+    parser.add_argument("--no-scope", action="store_true", help="drop clause 1 scope text")
+    parser.add_argument("--no-fallback", action="store_true",
+                        help="skip the multilingual fallback vectors (untranslated non-English lines "
+                             "then use the English encoder)")
     parser.add_argument("--batch-size", type=int, default=64)
     args = parser.parse_args()
 
@@ -35,8 +39,11 @@ def main() -> int:
     frame = corpus_mod.build_corpus(
         use_past_editions=not args.no_past_editions,
         use_aliases=not args.no_aliases,
+        use_scope=not args.no_scope,
     )
     print(f"  {len(frame):,} indexed documents (current + canonical + latest edition)")
+    n_scope = int((frame["scope_text"] != "").sum())
+    print(f"  {n_scope:,} carry scope text ({n_scope / len(frame):.1%})")
     frame.to_parquet(config.CORPUS_PARQUET, index=False)
 
     lookup = corpus_mod.build_lookup()
@@ -47,6 +54,17 @@ def main() -> int:
     bm25 = BM25Index(frame["lexical_text"].tolist(), frame["kys_id"].tolist())
     bm25.save()
     print(f"  saved {config.BM25_PICKLE.name}")
+
+    # Scope text gets its own keyword index rather than being appended to
+    # lexical_text: see data/SCOPE_TEXT.md section 3.
+    covered = frame[frame["scope_text"] != ""]
+    if len(covered):
+        scope_bm25 = BM25Index(covered["scope_text"].tolist(), covered["kys_id"].tolist())
+        scope_bm25.save(config.SCOPE_BM25_PICKLE)
+        print(f"  saved {config.SCOPE_BM25_PICKLE.name}  ({len(covered):,} documents)")
+    elif config.SCOPE_BM25_PICKLE.exists():
+        config.SCOPE_BM25_PICKLE.unlink()
+        print(f"  removed stale {config.SCOPE_BM25_PICKLE.name}")
 
     from is_advisor.dense import fingerprint
 
@@ -73,6 +91,21 @@ def main() -> int:
             "n_docs": len(frame),
             "model": config.BI_ENCODER,
         }
+
+        if not args.no_fallback and getattr(config, "FALLBACK_ENCODER", None):
+            # Same text, second encoder, its own document prefix. This is the
+            # slow half on CPU (multilingual-e5 is several times slower than bge).
+            from is_advisor.dense import load_encoder
+
+            print(f"Embedding {len(frame):,} documents with {config.FALLBACK_ENCODER} (CPU, fallback)")
+            fallback_vectors = encode_documents(
+                frame["doc_text"].tolist(), model=load_encoder(config.FALLBACK_ENCODER),
+                batch_size=args.batch_size, prefix=config.FALLBACK_DOC_PREFIX,
+            )
+            DenseIndex(fallback_vectors).save(config.FALLBACK_EMBEDDINGS_NPY)
+            print(f"  saved {config.FALLBACK_EMBEDDINGS_NPY.name}  shape={fallback_vectors.shape}")
+            meta["fallback_model"] = config.FALLBACK_ENCODER
+            meta["fallback_fingerprint"] = doc_fingerprint
 
     config.INDEX_META.write_text(json.dumps(meta, indent=2), encoding="utf-8")
 
