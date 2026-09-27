@@ -178,7 +178,7 @@ async def recommend_document(
     if not contents:
         raise HTTPException(status_code=400, detail="Uploaded file is empty.")
 
-    from is_advisor.documents import ScannedPdfError, read_document
+    from Semantic_Analysis.is_advisor.documents import ScannedPdfError, read_document
 
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
         tmp.write(contents)
@@ -214,7 +214,7 @@ async def tender_health(
     if not contents:
         raise HTTPException(status_code=400, detail="Uploaded file is empty.")
 
-    from is_advisor.documents import ScannedPdfError, read_document
+    from Semantic_Analysis.is_advisor.documents import ScannedPdfError, read_document
 
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
         tmp.write(contents)
