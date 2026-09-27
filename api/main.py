@@ -26,6 +26,8 @@ from rag.llm_client import get_llm_client
 from rag.metadata_store import MetadataStore
 from rag.pipeline import run_query
 from rag.retriever_factory import get_retriever
+from Semantic_Analysis.is_advisor.search import load_retriever
+from api.tender_health import build_health_report
 
 _SEMANTIC_ANALYSIS_ROOT = Path(__file__).resolve().parent.parent / "Semantic_Analysis"
 if str(_SEMANTIC_ANALYSIS_ROOT) not in sys.path:
@@ -42,6 +44,11 @@ async def lifespan(app: FastAPI):
     store = MetadataStore()
     app_state["store"] = store
     app_state["retriever"] = get_retriever(store)
+    app_state["health_retriever"] = load_retriever(
+        with_dense=False,
+        with_reranker=False,
+        with_spacy=True,
+    )
     app_state["kg"] = Neo4jKGClient.from_env()
     app_state["llm"] = get_llm_client()
     yield
@@ -238,7 +245,7 @@ async def recommend_document(
     if not contents:
         raise HTTPException(status_code=400, detail="Uploaded file is empty.")
 
-    from is_advisor.documents import ScannedPdfError, read_document
+    from Semantic_Analysis.is_advisor.documents import ScannedPdfError, read_document
 
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
         tmp.write(contents)
@@ -254,6 +261,69 @@ async def recommend_document(
         raise HTTPException(status_code=422, detail="No extractable text found in the uploaded file.")
 
     return _run_and_build_response(text, top_k, language)
+
+
+@app.post("/tender-health")
+async def tender_health(
+    file: UploadFile = File(...),
+) -> dict:
+    """Audit an uploaded tender for cited and outdated Indian Standards."""
+    suffix = Path(file.filename or "").suffix.lower()
+    if suffix not in (".pdf", ".txt"):
+        raise HTTPException(status_code=400, detail="Only .pdf and .txt files are supported.")
+
+    contents = await file.read()
+    if len(contents) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)}MB limit.",
+        )
+    if not contents:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
+    from Semantic_Analysis.is_advisor.documents import ScannedPdfError, read_document
+
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp.write(contents)
+        tmp_path = Path(tmp.name)
+
+    try:
+        text = read_document(tmp_path)
+    except ScannedPdfError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+    if not text.strip():
+        raise HTTPException(
+            status_code=422,
+            detail="No extractable text found in the uploaded file.",
+        )
+
+    results = app_state["health_retriever"].search_document(text)
+    report = build_health_report(results)
+
+    return {
+        "total_items": report.total_items,
+        "items_with_citations": report.items_with_citations,
+        "items_without_citations": report.items_without_citations,
+        "unique_standards_cited": report.unique_standards_cited,
+        "current_standards": report.current_standards,
+        "outdated_standards": report.outdated_standards,
+        "standards": [
+            {
+                "cited_as": standard.cited_as,
+                "is_number": standard.is_number,
+                "title": standard.title,
+                "status": standard.status,
+                "replaced_by_is": standard.replaced_by_is,
+                "successor_parts": standard.successor_parts,
+                "note": standard.note,
+            }
+            for standard in report.standards
+        ],
+        "items_without_standards": report.items_without_standards,
+    }
 
 
 @app.get("/health")
