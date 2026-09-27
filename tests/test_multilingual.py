@@ -16,6 +16,7 @@ separate question, measured by hand in README section 14, not here.
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -226,6 +227,9 @@ class StubBackend:
     name = "stub"
     PHRASES = {
         "आरसीसी कार्य के लिये टीएमटी सरिया": "TMT bar for RCC work",
+        # What the translator actually receives for the query-layer test once
+        # the notation (IS 1786, Fe500D) has been lifted out.
+        "आरसीसी कार्य के लिये टीएमटी सरिया के अनुसार": "TMT bar for RCC work, as per",
         "बाहर लगाने के लिये की स्टेनलेस स्टील पानी की टंकी": "stainless steel water tank for outdoor use",
     }
 
@@ -316,7 +320,10 @@ def test_line_items_carry_both_languages(stub) -> None:
     check("language recorded", item.language, "hin_Deva")
     check("translated flag set", item.translated, True)
     check("citation extracted through translation", item.cited_is, ["IS 1786"])
-    check("retrieval text is english", "आरसीसी" in item.text, False)
+    # Any Devanagari at all, not one word: this check used to pass only because
+    # strip_boilerplate was deleting Indic vowel signs ("आरसीसी" -> "आरस स"),
+    # which hid that the line had not been translated.
+    check("retrieval text is english", bool(re.search(r"[ऀ-ॿ]", item.text)), False)
 
     # multilingual=False must be the old path exactly, which is what the
     # evaluation scripts rely on.
@@ -499,7 +506,9 @@ def test_stale_vectors_detect_an_encoder_swap() -> None:
             # with the wrong meaning.
             config.INDEX_META.write_text(
                 json.dumps({
-                    "model": "BAAI/bge-small-en-v1.5",
+                    # Any encoder other than the configured one. This used to
+                    # name bge, which only differed while e5 was the primary.
+                    "model": f"not-{config.BI_ENCODER}",
                     "embedding_fingerprint": fingerprint(frame["doc_text"].tolist()),
                     "n_docs": 1,
                 }),
