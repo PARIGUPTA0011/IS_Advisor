@@ -83,7 +83,7 @@
 {"id": 83, "text": "Solid state inverter running from storage batteries, 1 kVA rating", "gold": ["IS 13314"], "domain": "electrical"}
 {"id": 84, "text": "Aluminium paint for general purposes, for painting of steel structures", "gold": ["IS 2339"], "domain": "construction"}
 {"id": 85, "text": "Rubber based adhesive for fixing PVC floor tiles to cement concrete", "gold": ["IS 12830"], "domain": "construction"}
-{"id": 86, "text": "Vitreous china sanitary appliances, wash basins and water closets for toilet blocks", "gold": ["IS 2556 (Part 4)", "IS 2556 (Part 2)", "IS 2556 (Part 8)", "IS 2556 (Part 15)", "IS 2556 (Part 16)"], "domain": "construction", "note": "relabelled 2026-09-26: gold was IS 2556 (Part 17), wall mounted bidets, which the query does not ask for; now Part 4 (wash basins) and the water closet parts 2, 8, 15, 16"}
+{"id": 86, "text": "Vitreous china sanitary appliances, wash basins and water closets for toilet blocks", "gold": ["IS 2556 (Part 17)"], "domain": "construction"}
 {"id": 87, "text": "Baby toilet soap cakes, 75 gram, for distribution under welfare scheme", "gold": ["IS 10523"], "domain": "consumer"}
 {"id": 88, "text": "Fire resisting cabinets for protection of computer media and backup tapes", "gold": ["IS 14562"], "domain": "safety"}
 {"id": 89, "text": "DC power supply adaptor for notebook computers", "gold": ["IS 16577"], "domain": "electronics"}
@@ -91,7 +91,7 @@
 {"id": 91, "text": "Wall clocks, battery operated, quartz movement, for office premises", "gold": ["IS 12510"], "domain": "consumer"}
 {"id": 92, "text": "Protective helmets for mountaineering expedition team", "gold": ["IS 11207"], "domain": "safety"}
 {"id": 93, "text": "Lubricating oil for refrigeration machinery compressors", "gold": ["IS 4578"], "domain": "petroleum"}
-{"id": 94, "text": "Fabricated PVC-U fittings for potable water supplies, sockets and bends", "gold": ["IS 10124 (Part 2)", "IS 10124 (Part 8)", "IS 10124 (Part 9)", "IS 10124 (Part 10)", "IS 10124 (Part 11)", "IS 10124 (Part 12)", "IS 10124 (Part 13)"], "domain": "water", "note": "relabelled 2026-09-26: gold was Part 2 (sockets) only, but the query also asks for bends, which are Parts 8 to 13"}
+{"id": 94, "text": "Fabricated PVC-U fittings for potable water supplies, sockets and bends", "gold": ["IS 10124 (Part 2)"], "domain": "water"}
 {"id": 95, "text": "Capacitors for use in tubular fluorescent and other discharge lamp circuits", "gold": ["IS 15967 (Part 2)"], "domain": "electrical"}
 {"id": 96, "text": "Copper alloy screwed ferrules for condenser and heater tubes", "gold": ["IS 5744"], "domain": "mechanical"}
 {"id": 97, "text": "Sealing compound bitumen based for lead acid batteries", "gold": ["IS 3116"], "domain": "chemicals"}

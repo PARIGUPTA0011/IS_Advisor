@@ -36,21 +36,10 @@ def load_encoder(name: str = config.BI_ENCODER):
     return _model_cache[name]
 
 
-def encode_documents(texts: list[str], model=None, batch_size: int = 64, show_progress: bool = True,
-                     prefix: str | None = None) -> np.ndarray:
-    """Embed the corpus. The document prefix is applied here, not stored.
-
-    e5 wants "passage: " on documents and "query: " on queries, and treats the
-    two asymmetrically. Keeping the prefix out of the stored `doc_text` means
-    the corpus parquet, the BM25 index and the stale-vector fingerprint all
-    still describe the real document text, and swapping the encoder for one
-    with different prefixes needs no rebuild of anything but the vectors.
-    """
+def encode_documents(texts: list[str], model=None, batch_size: int = 64, show_progress: bool = True) -> np.ndarray:
     model = model or load_encoder()
-    if prefix is None:
-        prefix = config.BI_ENCODER_DOC_PREFIX
     vectors = model.encode(
-        [f"{prefix}{text}" for text in texts],
+        texts,
         batch_size=batch_size,
         convert_to_numpy=True,
         normalize_embeddings=True,      # cosine similarity becomes a dot product
@@ -59,18 +48,10 @@ def encode_documents(texts: list[str], model=None, batch_size: int = 64, show_pr
     return vectors.astype("float32")
 
 
-def encode_queries(texts: list[str], model=None, prefix: str | None = None) -> np.ndarray:
-    """Encode queries, applying the model's retrieval prefix where it has one.
-
-    The prefix comes from config rather than from sniffing the model name: the
-    name test that used to be here ("bge" in the model id) silently applied no
-    prefix at all the moment the encoder was swapped for a non-bge one, which
-    is exactly the kind of quiet quality loss the stale-vector guard exists to
-    prevent on the other side of the same file.
-    """
+def encode_queries(texts: list[str], model=None) -> np.ndarray:
+    """Encode queries, applying the model's retrieval prefix where it has one."""
     model = model or load_encoder()
-    if prefix is None:
-        prefix = config.BI_ENCODER_QUERY_PREFIX
+    prefix = config.BI_ENCODER_QUERY_PREFIX if "bge" in config.BI_ENCODER.lower() else ""
     prepared = [f"{prefix}{t}" for t in texts]
     vectors = model.encode(
         prepared, convert_to_numpy=True, normalize_embeddings=True, show_progress_bar=False

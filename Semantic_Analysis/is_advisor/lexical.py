@@ -13,18 +13,7 @@ import numpy as np
 
 from . import config
 
-# Letters, digits and Indic combining marks. The previous pattern was
-# `[a-z0-9]+`, which silently discarded every non-Latin character: a Devanagari
-# query tokenised to nothing but its digits and a Tamil one to the empty list,
-# so BM25 - the stronger of the two retrievers on this corpus (README section
-# 7) - returned no candidates at all for any Indic-script input. Queries reach
-# this function translated into English, so this matters mainly when
-# translation is unavailable; it is the difference between degraded keyword
-# retrieval and none.
-#
-# `\w` alone is not enough: Python classifies Indic vowel signs as combining
-# marks rather than word characters, so `\w+` cuts "के" after the consonant.
-_TOKEN_RE = re.compile(r"[^\W_]+(?:[ऀ-෿؀-ۿ][^\W_]*)*", re.UNICODE)
+_TOKEN_RE = re.compile(r"[a-z0-9]+")
 
 # Kept deliberately short. BM25 already discounts frequent terms, and words like
 # "specification" do carry signal in this corpus.
