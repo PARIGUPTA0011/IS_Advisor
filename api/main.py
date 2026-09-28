@@ -317,6 +317,94 @@ async def recommend_document(
     return _run_and_build_response(text, top_k, language)
 
 
+class TranscribeResponse(BaseModel):
+    """Mirrors speech.transcribe.Transcript.to_dict(), plus two fields added for
+    the frontend's convenience: `language_iso` and `language_name` resolve the
+    FLORES code to what the language switcher already understands, so the
+    frontend does not need to know FLORES codes to react to what was heard."""
+
+    text: str
+    raw_text: str
+    language: str
+    language_iso: str | None = None
+    language_name: str | None = None
+    whisper_language: str | None = None
+    whisper_confidence: float | None = None
+    detected_script: str
+    detection_method: str
+    language_mismatch: str
+    duration: float | None = None
+    notation_changes: list[list[str]] = []
+    engine: str
+    note: str
+
+
+@app.post("/transcribe", response_model=TranscribeResponse)
+async def transcribe_audio(
+    file: UploadFile = File(...),
+    language: str | None = None,
+) -> TranscribeResponse:
+    """Speech in, transcript out - the speech/ edge layer, reachable over HTTP.
+
+    Deliberately separate from /recommend: the frontend shows the transcript
+    (and lets the user fix a misheard word) before spending a retrieval + LLM
+    call on it, the same "print the transcript before the results" rule
+    run_query.py and 03_search.py follow on the command line.
+
+    `language` is optional and, if given, forces both what Whisper is told to
+    expect and the language the transcript is reported in - the same override
+    `--lang` gives the CLIs. Analyze.tsx currently omits it, so a dictated
+    query is detected from the audio itself rather than assumed to match
+    whatever the UI's current language happens to be.
+    """
+    from speech import SpeechUnavailable, transcribe_file
+    from speech.config import SUPPORTED_AUDIO_SUFFIXES
+
+    suffix = Path(file.filename or "").suffix.lower()
+    if suffix not in SUPPORTED_AUDIO_SUFFIXES:
+        # A browser MediaRecorder blob often has no real filename ("blob"), so
+        # the suffix is inferred from the content type it declares instead of
+        # rejecting audio the decoder can actually read.
+        suffix = {
+            "audio/webm": ".webm", "audio/ogg": ".ogg", "audio/mp4": ".m4a",
+            "audio/mpeg": ".mp3", "audio/wav": ".wav", "audio/x-wav": ".wav",
+            "audio/flac": ".flac",
+        }.get((file.content_type or "").lower(), "")
+        if suffix not in SUPPORTED_AUDIO_SUFFIXES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported audio type. Use one of: {', '.join(SUPPORTED_AUDIO_SUFFIXES)}",
+            )
+
+    contents = await file.read()
+    if len(contents) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail=f"File exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)}MB limit.")
+    if not contents:
+        raise HTTPException(status_code=400, detail="Uploaded audio is empty.")
+
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp.write(contents)
+        tmp_path = Path(tmp.name)
+    try:
+        transcript = transcribe_file(tmp_path, language=language)
+    except SpeechUnavailable as error:
+        # Not installed, or the model failed to load - a deployment problem,
+        # not a bad request, so 503 rather than 400/422.
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+    from multilingual import languages
+
+    resolved = languages.resolve(transcript.language)
+    payload = transcript.to_dict()
+    return TranscribeResponse(
+        **payload,
+        language_iso=resolved.iso1 if resolved else None,
+        language_name=resolved.name if resolved else None,
+    )
+
+
 @app.post("/tender-health")
 async def tender_health(
     file: UploadFile = File(...),

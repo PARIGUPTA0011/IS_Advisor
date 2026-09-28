@@ -83,6 +83,26 @@ export interface HealthResponse {
   standards_loaded: number;
 }
 
+/** Mirrors api/main.py's TranscribeResponse, which mirrors speech/transcribe.py's
+ * Transcript.to_dict() plus language_iso/language_name for the frontend's
+ * convenience - see api/main.py::transcribe_audio for why those two exist. */
+export interface TranscribeResponse {
+  text: string;
+  raw_text: string;
+  language: string;
+  language_iso: string | null;
+  language_name: string | null;
+  whisper_language: string | null;
+  whisper_confidence: number | null;
+  detected_script: string;
+  detection_method: string;
+  language_mismatch: string;
+  duration: number | null;
+  notation_changes: [string, string][];
+  engine: string;
+  note: string;
+}
+
 /** Shape of a FastAPI HTTPException error body: {"detail": "..."} */
 export interface ApiErrorBody {
   detail: string;

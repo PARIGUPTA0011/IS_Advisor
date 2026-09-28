@@ -1,11 +1,13 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowRight, BrainCircuit, FileText, Search, Upload } from "lucide-react";
+import { ArrowRight, BrainCircuit, FileText, Search, Upload, X } from "lucide-react";
 import { AnalysisProgress } from "../components/analyze/AnalysisProgress";
+import { MicButton } from "../components/analyze/MicButton";
 import { ErrorState } from "../components/common/ErrorState";
 import { useRecommend } from "../hooks/useRecommend";
+import { useSpeechToText } from "../hooks/useSpeechToText";
 import { useAnalysisPrefs } from "../contexts/AnalysisPrefsContext";
 import { apiLanguageName } from "../i18n";
 
@@ -20,11 +22,20 @@ export function Dashboard() {
 
   const isLoading = status === "loading";
 
+  const speech = useSpeechToText({
+    onTranscript: (text) => {
+      setQuery((prev) => (prev.trim() ? `${prev.trim()} ${text}` : text));
+    },
+  });
+
   const handleAnalyze = async () => {
     if (!query.trim()) return;
     const result = await runQuery(query.trim(), { top_k: topK, language: apiLanguageName(i18n.language) });
     if (result) navigate("/results", { state: { result } });
   };
+
+  const showTranscriptPill = speech.status === "done" && speech.transcript !== null;
+  const showSpeechError = speech.status === "error" && speech.error !== null;
 
   return (
     <div className="relative overflow-hidden">
@@ -91,6 +102,7 @@ export function Dashboard() {
                     className="min-h-20 min-w-0 flex-1 resize-none bg-transparent py-1.5 text-sm leading-6 text-text-primary placeholder:text-text-muted focus:outline-none"
                   />
                   <div className="flex shrink-0 flex-col items-center gap-2 self-end pb-0.5 sm:flex-row">
+                    {/* Upload button */}
                     <button
                       type="button"
                       onClick={() => navigate("/analyze")}
@@ -99,6 +111,19 @@ export function Dashboard() {
                     >
                       <Upload size={17} />
                     </button>
+
+                    {/* Mic button */}
+                    <MicButton
+                      status={speech.status}
+                      onToggle={speech.toggle}
+                      title={
+                        speech.status === "recording"
+                          ? t("analyze.mic.stopRecording")
+                          : t("analyze.mic.startRecording")
+                      }
+                    />
+
+                    {/* Analyze button */}
                     <button
                       type="button"
                       onClick={handleAnalyze}
@@ -110,6 +135,75 @@ export function Dashboard() {
                     </button>
                   </div>
                 </div>
+
+                {/* Recording / transcribing status */}
+                <AnimatePresence>
+                  {speech.status === "recording" && (
+                    <motion.p
+                      initial={{ opacity: 0, y: -4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -4 }}
+                      className="mt-2 text-xs font-medium text-red-500"
+                    >
+                      {t("analyze.mic.recording")}
+                    </motion.p>
+                  )}
+                  {speech.status === "transcribing" && (
+                    <motion.p
+                      initial={{ opacity: 0, y: -4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -4 }}
+                      className="mt-2 text-xs text-text-muted"
+                    >
+                      {t("analyze.mic.transcribing")}
+                    </motion.p>
+                  )}
+                </AnimatePresence>
+
+                {/* Transcript pill */}
+                <AnimatePresence>
+                  {showTranscriptPill && speech.transcript && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -6 }}
+                      className="mt-2 flex items-start justify-between gap-3 rounded-xl border border-border bg-surface-muted px-4 py-2.5 text-left text-xs"
+                    >
+                      <div className="min-w-0">
+                        <span className="font-medium text-text-secondary">
+                          {t("analyze.mic.heard")}
+                          {speech.transcript.language_name &&
+                          speech.transcript.language_name.toLowerCase() !== "english" ? (
+                            <span className="ml-1 text-text-muted">
+                              ({speech.transcript.language_name})
+                            </span>
+                          ) : null}
+                          {": "}
+                        </span>
+                        <span className="text-text-primary">{speech.transcript.text}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={speech.reset}
+                        aria-label="Dismiss transcript"
+                        className="shrink-0 text-text-muted hover:text-text-primary"
+                      >
+                        <X size={13} />
+                      </button>
+                    </motion.div>
+                  )}
+
+                  {showSpeechError && (
+                    <motion.p
+                      initial={{ opacity: 0, y: -6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -6 }}
+                      className="mt-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-left text-xs text-red-600 dark:border-red-800 dark:bg-red-950/40 dark:text-red-400"
+                    >
+                      {speech.error}
+                    </motion.p>
+                  )}
+                </AnimatePresence>
 
                 <div className="mt-4 flex flex-wrap items-center justify-center gap-2 text-xs text-text-muted">
                   <span>{t("dashboard.tryExample")}:</span>

@@ -55,6 +55,13 @@
       "building": "Building recommendations",
       "evidence": "Generating evidence",
       "done": "Analysis complete"
+    },
+    "mic": {
+      "startRecording": "Start voice input",
+      "stopRecording": "Stop recording",
+      "recording": "Recording…",
+      "transcribing": "Transcribing…",
+      "heard": "Heard"
     }
   },
   "results": {
