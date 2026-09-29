@@ -31,6 +31,7 @@ from __future__ import annotations
 import os
 import sys
 import threading
+import time
 from collections import OrderedDict
 from dataclasses import dataclass
 
@@ -549,10 +550,16 @@ class Translator:
             except Exception as error:
                 last_note = f"{backend.name} failed: {type(error).__name__}: {error}"
                 continue
-            if len(outputs) == len(texts) and all(outputs):
-                for text, output in zip(texts, outputs):
+            if len(outputs) == len(texts):
+                # A model can legitimately return "" for one string in an
+                # otherwise-good batch (seen with very short/placeholder-only
+                # inputs like "STEP {{step}}" into Korean) - that one string
+                # falls back to its own English text rather than discarding
+                # every other translation the batch got right.
+                resolved = [output if output else text for text, output in zip(texts, outputs)]
+                for text, output in zip(texts, resolved):
                     self._store(text, source, target, output)
-                return outputs, backend.name, ""
+                return resolved, backend.name, ""
             last_note = f"{backend.name} returned {len(outputs)} outputs for {len(texts)} inputs"
         return list(texts), "none", last_note
 
@@ -632,6 +639,63 @@ class Translator:
 
 
 _DEFAULT: Translator | None = None
+
+# Set by warm_up() at server startup, read by GET /health so a caller can tell
+# "still loading the model" apart from "loaded and ready" apart from "never
+# attempted" - the three states get_translator().status() alone cannot
+# distinguish, because its "available" flag defaults to True until a load has
+# actually FAILED, not until one has actually SUCCEEDED.
+WARMUP_STATUS: dict = {"state": "not_started", "elapsed_s": None, "detail": ""}
+
+
+def warm_up(sample_language: str = "hin_Deva", sample_text: str = "नमस्ते") -> dict:
+    """Force the translation backend to load now, synchronously, instead of on
+    whatever request happens to arrive first.
+
+    This is the fix for a real bug: without it, the FIRST non-English request
+    after every server start (or every `--reload` restart) pays the full
+    2.5GB NLLB load cost - measured at ~20s on this machine - *inside* that
+    user's request/response cycle, on top of retrieval and the LLM call. A
+    slow first request looks indistinguishable from a broken one, and if the
+    combined total creeps past the frontend's timeout, the user sees a
+    timeout on every attempt if they keep hitting the same cold path (e.g.
+    after each `--reload` restart during development).
+
+    Call this once, at startup, via multilingual.warmup.warm_up_in_background()
+    when the server has an event loop to run it on, or directly (as here) when
+    it does not. Updates and returns WARMUP_STATUS; never raises - a failed
+    warm-up is reported, not fatal, because English queries never need
+    translation at all and should keep working regardless.
+    """
+    started = time.time()
+    WARMUP_STATUS.update(state="loading", elapsed_s=None, detail="")
+    try:
+        translator = get_translator()
+        if not translator.enabled:
+            WARMUP_STATUS.update(state="disabled", elapsed_s=0.0, detail="translation disabled (IS_ADVISOR_TRANSLATE=0)")
+            return dict(WARMUP_STATUS)
+        inbound = translator.to_english(sample_text, source=sample_language)
+        outbound = translator.from_english("language support", target=sample_language)
+        elapsed = time.time() - started
+        if inbound.translated and outbound.translated:
+            WARMUP_STATUS.update(
+                state="ready", elapsed_s=round(elapsed, 1),
+                detail=f"translation directions loaded in {elapsed:.1f}s",
+            )
+            print(f"[warmup] translation directions ready in {elapsed:.1f}s", flush=True)
+        else:
+            notes = [item.note for item in (inbound, outbound) if not item.translated and item.note]
+            detail = "; ".join(notes) or "one or more translation directions are unavailable"
+            WARMUP_STATUS.update(
+                state="failed", elapsed_s=round(elapsed, 1),
+                detail=detail,
+            )
+            print(f"! [warmup] translation warm-up did not succeed: {detail}", flush=True)
+    except Exception as error:
+        elapsed = time.time() - started
+        WARMUP_STATUS.update(state="failed", elapsed_s=round(elapsed, 1), detail=f"{type(error).__name__}: {error}")
+        print(f"! [warmup] translation warm-up raised {type(error).__name__}: {error}", flush=True)
+    return dict(WARMUP_STATUS)
 
 
 def get_translator() -> Translator:

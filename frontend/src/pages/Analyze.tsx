@@ -7,10 +7,13 @@ import { UploadDropzone } from "../components/analyze/UploadDropzone";
 import { AnalysisProgress } from "../components/analyze/AnalysisProgress";
 import { MicButton } from "../components/analyze/MicButton";
 import { ErrorState } from "../components/common/ErrorState";
+import { WarmupBanner } from "../components/common/WarmupBanner";
 import { useRecommend } from "../hooks/useRecommend";
 import { useSpeechToText } from "../hooks/useSpeechToText";
 import { useAnalysisPrefs } from "../contexts/AnalysisPrefsContext";
-import { apiLanguageName } from "../i18n";
+import { useTranslationWarmup } from "../hooks/useTranslationWarmup";
+// apiLanguageName is deliberately NOT used to set the request's `language`
+// field any more - see the comment on handleSubmit below.
 
 const EXAMPLE_KEYS = [
   "analyze.examples.led",
@@ -21,9 +24,10 @@ const EXAMPLE_KEYS = [
 type Mode = "text" | "upload";
 
 export function Analyze() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { topK } = useAnalysisPrefs();
+  const { isPreparing } = useTranslationWarmup();
   const { status, error, runQuery, runDocument, reset } = useRecommend();
 
   const [mode, setMode] = useState<Mode>("text");
@@ -31,24 +35,38 @@ export function Analyze() {
   const [file, setFile] = useState<File | null>(null);
 
   const isLoading = status === "loading";
-  const language = apiLanguageName(i18n.language);
 
   const handleSubmit = async () => {
+    // `language` is intentionally omitted here. It used to be set to
+    // apiLanguageName(i18n.language) - the UI's own display language - and
+    // sent on every request. The backend treats an explicit `language` as
+    // authoritative over whatever the text actually is (the same way
+    // `run_query.py --lang` overrides detection), so a query typed or
+    // dictated in Hindi while the UI happened to be showing English was
+    // being forced through the pipeline AS English: never translated, and
+    // searched against an English-only index. Leaving it out lets the
+    // backend detect the language from the query itself, exactly like
+    // run_query.py does by default, and the detected language comes back on
+    // the response as `language` and is shown on the results page.
     const result =
       mode === "text"
-        ? await runQuery(query.trim(), { top_k: topK, language })
+        ? await runQuery(query.trim(), { top_k: topK })
         : file
-          ? await runDocument(file, { top_k: topK, language })
+          ? await runDocument(file, { top_k: topK })
           : null;
     if (result) navigate("/results", { state: { result } });
   };
 
-  const canSubmit = mode === "text" ? query.trim().length > 0 : file !== null;
+  const canSubmit = mode === "text"
+    ? query.trim().length > 0 && !(isPreparing && /[^\u0000-\u024f\u1e00-\u1eff]/u.test(query))
+    : file !== null;
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-10 md:px-8">
       <h1 className="font-display text-3xl font-semibold text-text-primary">{t("nav.analyze")}</h1>
       <p className="mt-2 text-sm text-text-secondary">{t("dashboard.subheading")}</p>
+
+      <WarmupBanner />
 
       <div className="mt-6 flex gap-2">
         {(["text", "upload"] as Mode[]).map((m) => (
@@ -181,6 +199,11 @@ function TextPanel({ query, setQuery, t, disabled }: TextPanelProps) {
           placeholder={t("dashboard.placeholder")}
           rows={6}
           disabled={disabled}
+          // "auto" lets the browser's own bidi algorithm pick left-to-right or
+          // right-to-left from whatever script is actually typed or pasted in
+          // (Hindi, Urdu, Tamil, ...) - there is no language selector to read
+          // this from in advance, and there should not be one.
+          dir="auto"
           className="w-full resize-none bg-transparent text-sm text-text-primary placeholder:text-text-muted focus:outline-none disabled:opacity-50"
         />
         <div className="flex items-center justify-between border-t border-border pt-3">
@@ -255,18 +278,18 @@ function TextPanel({ query, setQuery, t, disabled }: TextPanelProps) {
                 {t("analyze.mic.heard")}
                 {speech.transcript.language_name &&
                 speech.transcript.language_name.toLowerCase() !== "english" ? (
-                  <span className="ml-1 text-text-muted">
+                  <span className="ms-1 text-text-muted">
                     ({speech.transcript.language_name})
                   </span>
                 ) : null}
                 {": "}
               </span>
-              <span className="text-text-primary">{speech.transcript.text}</span>
+              <span className="text-text-primary" dir="auto">{speech.transcript.text}</span>
             </div>
             <button
               type="button"
               onClick={speech.reset}
-              aria-label="Dismiss transcript"
+              aria-label={t("analyze.mic.dismissTranscript")}
               className="shrink-0 text-text-muted hover:text-text-primary"
             >
               <X size={13} />

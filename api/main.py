@@ -19,9 +19,11 @@ detected from the query unless the request names it:
 GET /languages lists what is supported and how translation is currently wired.
 """
 
+import asyncio
 import os
 import sys
 import tempfile
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -74,7 +76,40 @@ async def lifespan(app: FastAPI):
     warning = app_state["kg"].empty_graph_warning()
     if warning:
         print(f"! {warning}")
+
+    # Translation is loaded lazily by design (multilingual/translate.py) so an
+    # English-only deployment never pays for a 2.5GB model it does not need.
+    # But that laziness meant the very FIRST non-English request after every
+    # server start - or every --reload restart - paid the full load cost
+    # inside that request's response time, on top of retrieval and the LLM
+    # call. Measured on this machine: ~20s just for the model load, which can
+    # push a request close to or past a client's timeout, and looks exactly
+    # like "every non-English query is broken" if the developer is restarting
+    # the server between attempts.
+    #
+    # Fired as a background task, started AFTER the server begins accepting
+    # connections (not awaited here), so the app opens for English traffic
+    # immediately and GET /health can genuinely report "loading" for the
+    # ~20s this takes - rather than the alternative of blocking startup
+    # entirely, which would make that state unobservable from outside.
+    from multilingual.translate import warm_up as warm_up_translation
+    from speech.transcribe import warm_up as warm_up_speech
+
+    async def _background_warmup(name: str, fn) -> None:
+        started = time.time()
+        # warm_up() is blocking (CPU-bound, native-library); run it off the
+        # event loop so requests and health checks remain responsive.
+        await asyncio.to_thread(fn)
+        print(f"[warmup] {name} warm-up task finished after {time.time() - started:.1f}s", flush=True)
+
+    app_state["warmup_tasks"] = [
+        asyncio.create_task(_background_warmup("translation", warm_up_translation)),
+        asyncio.create_task(_background_warmup("speech", warm_up_speech)),
+    ]
+
     yield
+    for task in app_state["warmup_tasks"]:
+        task.cancel()
     app_state["kg"].close()
 
 
@@ -470,7 +505,8 @@ async def tender_health(
 
 @app.get("/health")
 def health() -> dict:
-    from multilingual.translate import get_translator
+    from multilingual.translate import WARMUP_STATUS, get_translator
+    from speech.transcribe import WARMUP_STATUS as SPEECH_WARMUP_STATUS
 
     store: MetadataStore | None = app_state.get("store")
     # The translation status is in here rather than in a separate endpoint
@@ -490,6 +526,15 @@ def health() -> dict:
         "standards_loaded": len(store) if store else 0,
         "graph": graph,
         "translation": get_translator().status(),
+        # "not_started" | "loading" | "ready" | "failed" | "disabled" - the
+        # frontend polls this to show "preparing language support" instead of
+        # letting a non-English query race a cold model load. English queries
+        # never consult this: multilingual.detect() short-circuits before
+        # touching the translator at all for text that is already English.
+        "warmup": WARMUP_STATUS,
+        # Same idea, for the speech-to-text model (faster-whisper). Typed
+        # queries never consult this.
+        "speech_warmup": SPEECH_WARMUP_STATUS,
     }
 
 

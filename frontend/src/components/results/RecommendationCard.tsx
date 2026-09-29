@@ -12,9 +12,13 @@ interface Props {
   evidence: EvidenceOut[];
   relatedStandards: RelatedStandardOut[];
   index: number;
+  /** True when the response's detected language reads right-to-left (Urdu,
+   * Sindhi, Kashmiri, Arabic, Persian) - applied only to the localized prose,
+   * never to the standard_id/title, which stay English and left-to-right. */
+  rtl?: boolean;
 }
 
-export function RecommendationCard({ recommendation, evidence, relatedStandards, index }: Props) {
+export function RecommendationCard({ recommendation, evidence, relatedStandards, index, rtl }: Props) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(index === 0);
 
@@ -33,7 +37,7 @@ export function RecommendationCard({ recommendation, evidence, relatedStandards,
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className="flex w-full items-start justify-between gap-4 p-5 text-left"
+        className="flex w-full items-start justify-between gap-4 p-5 text-start"
       >
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -62,6 +66,14 @@ export function RecommendationCard({ recommendation, evidence, relatedStandards,
               {t("results.whyThisApplies")}
             </p>
             <p className="text-sm text-text-secondary">{recommendation.reason}</p>
+            {/* reason_localized is only present for a non-English query and is
+                machine translation, shown beside the English reason rather
+                than replacing it - see rag/pipeline.py::localise_response. */}
+            {recommendation.reason_localized && recommendation.reason_localized !== recommendation.reason && (
+              <p className="mt-1 text-sm text-text-primary" dir={rtl ? "rtl" : undefined}>
+                {recommendation.reason_localized}
+              </p>
+            )}
           </div>
 
           {matchedEvidence && (
@@ -81,14 +93,25 @@ export function RecommendationCard({ recommendation, evidence, relatedStandards,
               <div className="flex flex-wrap gap-2">
                 {related.map((rel, i) => {
                   const other = rel.standard_id === recommendation.standard_id ? rel.related_to : rel.standard_id;
+                  // The tooltip prefers the localized reason so it reads in
+                  // the same language as the rest of the answer; English is
+                  // still what a screen reader falls back to if there isn't one.
+                  const tooltip = rel.reason_localized ?? rel.reason ?? undefined;
                   return (
                     <span
                       key={i}
                       className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1.5 text-xs"
-                      title={rel.reason ?? undefined}
+                      title={tooltip}
                     >
                       <span className="text-text-muted">{rel.relationship.replace(/_/g, " ").toLowerCase()}</span>
                       <span className="font-medium text-text-primary">{other}</span>
+                      {/* rel.title is the standard's own title, looked up from
+                          the dataset (rag/kg_editions.py) - previously this
+                          pill only ever showed the bare number. */}
+                      {rel.title && <span className="text-text-muted">· {rel.title}</span>}
+                      {rel.status === "withdrawn" && (
+                        <span className="text-status-withdrawn">({t("results.status.withdrawn")})</span>
+                      )}
                     </span>
                   );
                 })}

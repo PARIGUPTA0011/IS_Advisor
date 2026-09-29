@@ -6,6 +6,7 @@ import { motion } from "framer-motion";
 const STEP_KEYS = [
   "analyze.steps.uploading",
   "analyze.steps.extracting",
+  "analyze.steps.language",
   "analyze.steps.understanding",
   "analyze.steps.searching",
   "analyze.steps.building",

@@ -1,10 +1,12 @@
 import type { ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Monitor, Moon, RefreshCw, Sun } from "lucide-react";
 import { useTheme, type ThemePreference } from "../contexts/ThemeContext";
 import { useAnalysisPrefs } from "../contexts/AnalysisPrefsContext";
 import { useHealth } from "../hooks/useHealth";
-import { SUPPORTED_LANGUAGES, persistLanguage, type LanguageCode } from "../i18n";
+import { SUPPORTED_LANGUAGE_CODES, persistLanguage, type LanguageCode } from "../i18n";
+import { getSupportedLanguages, type ApiLanguage } from "../api/languages";
 
 function SectionCard({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -26,6 +28,17 @@ export function Settings() {
   const { preference, setPreference } = useTheme();
   const { topK, setTopK } = useAnalysisPrefs();
   const { status, data, retry } = useHealth();
+  const [languages, setLanguages] = useState<ApiLanguage[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getSupportedLanguages().then((items) => {
+      if (!cancelled) setLanguages(items.filter((item) => SUPPORTED_LANGUAGE_CODES.includes(item.iso as LanguageCode)));
+    }).catch(() => {
+      if (!cancelled) setLanguages([]);
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   return (
     <div className="mx-auto max-w-2xl space-y-5 px-4 py-10 md:px-8">
@@ -65,8 +78,10 @@ export function Settings() {
               }}
               className="w-full rounded-xl border border-border bg-surface px-4 py-3 text-sm font-medium text-text-primary outline-none transition-colors focus:border-accent-primary"
             >
-              {SUPPORTED_LANGUAGES.map((lang) => (
-                <option key={lang.code} value={lang.code}>{lang.label}</option>
+              {languages.map((lang) => (
+                <option key={lang.iso} value={lang.iso}>
+                  {lang.iso === "en" ? "English" : `${lang.native_name} (${lang.name})`}
+                </option>
               ))}
             </select>
           </div>

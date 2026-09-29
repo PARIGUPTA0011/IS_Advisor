@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
@@ -6,17 +6,21 @@ import { ArrowRight, BrainCircuit, FileText, Search, Upload, X } from "lucide-re
 import { AnalysisProgress } from "../components/analyze/AnalysisProgress";
 import { MicButton } from "../components/analyze/MicButton";
 import { ErrorState } from "../components/common/ErrorState";
+import { WarmupBanner } from "../components/common/WarmupBanner";
 import { useRecommend } from "../hooks/useRecommend";
 import { useSpeechToText } from "../hooks/useSpeechToText";
 import { useAnalysisPrefs } from "../contexts/AnalysisPrefsContext";
-import { apiLanguageName } from "../i18n";
+import { useTranslationWarmup } from "../hooks/useTranslationWarmup";
+// apiLanguageName is deliberately NOT used to set the request's `language`
+// any more - see the comment on handleAnalyze below.
 
 const EXAMPLE_KEYS = ["dashboard.examples.led", "dashboard.examples.pump"] as const;
 
 export function Dashboard() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { topK } = useAnalysisPrefs();
+  const { isPreparing } = useTranslationWarmup();
   const { status, error, runQuery, reset } = useRecommend();
   const [query, setQuery] = useState("");
 
@@ -30,7 +34,12 @@ export function Dashboard() {
 
   const handleAnalyze = async () => {
     if (!query.trim()) return;
-    const result = await runQuery(query.trim(), { top_k: topK, language: apiLanguageName(i18n.language) });
+    // `language` is intentionally omitted - see the identical fix and full
+    // explanation in Analyze.tsx's handleSubmit. This quick-search box on the
+    // homepage was a second, independent place forcing the interface's
+    // display language onto every query, which is what caused a Tamil/Hindi/
+    // Urdu query typed or dictated here to come back detected as English.
+    const result = await runQuery(query.trim(), { top_k: topK });
     if (result) navigate("/results", { state: { result } });
   };
 
@@ -66,7 +75,7 @@ export function Dashboard() {
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4 }}
-          className="font-display text-4xl font-semibold tracking-tight text-text-primary md:text-5xl"
+          className="break-words font-display text-4xl font-semibold tracking-tight text-text-primary md:text-5xl"
         >
           {t("dashboard.heading")}
         </motion.h1>
@@ -74,10 +83,14 @@ export function Dashboard() {
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, delay: 0.1 }}
-          className="mx-auto mt-3 max-w-xl text-sm text-text-secondary md:text-base"
+          className="mx-auto mt-3 max-w-xl break-words text-sm text-text-secondary md:text-base"
         >
           {t("dashboard.subheading")}
         </motion.p>
+
+        <div className="mx-auto mt-4 max-w-xl text-start">
+          <WarmupBanner />
+        </div>
 
         <motion.div
           initial={{ opacity: 0, y: 12 }}
@@ -92,7 +105,7 @@ export function Dashboard() {
               </motion.div>
             ) : (
               <motion.div key="input" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                <div className="glass-panel flex items-center gap-2 rounded-2xl p-2 pl-4 text-left">
+                <div className="glass-panel flex items-center gap-2 rounded-2xl p-2 ps-4 text-start">
                   <Search size={18} className="mt-1 shrink-0 text-text-muted" />
                   <textarea
                     value={query}
@@ -127,7 +140,7 @@ export function Dashboard() {
                     <button
                       type="button"
                       onClick={handleAnalyze}
-                      disabled={!query.trim()}
+                      disabled={!query.trim() || (isPreparing && /[^\u0000-\u024f\u1e00-\u1eff]/u.test(query))}
                       className="flex shrink-0 items-center gap-1.5 rounded-xl bg-accent-primary px-4 py-2.5 text-sm font-semibold text-text-on-primary transition-colors hover:bg-[var(--accent-primary-hover)] disabled:cursor-not-allowed disabled:bg-surface-muted disabled:text-text-muted"
                     >
                       {t("dashboard.analyze")}
@@ -167,14 +180,14 @@ export function Dashboard() {
                       initial={{ opacity: 0, y: -6 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -6 }}
-                      className="mt-2 flex items-start justify-between gap-3 rounded-xl border border-border bg-surface-muted px-4 py-2.5 text-left text-xs"
+                      className="mt-2 flex items-start justify-between gap-3 rounded-xl border border-border bg-surface-muted px-4 py-2.5 text-start text-xs"
                     >
                       <div className="min-w-0">
                         <span className="font-medium text-text-secondary">
                           {t("analyze.mic.heard")}
                           {speech.transcript.language_name &&
                           speech.transcript.language_name.toLowerCase() !== "english" ? (
-                            <span className="ml-1 text-text-muted">
+                            <span className="ms-1 text-text-muted">
                               ({speech.transcript.language_name})
                             </span>
                           ) : null}
@@ -185,7 +198,7 @@ export function Dashboard() {
                       <button
                         type="button"
                         onClick={speech.reset}
-                        aria-label="Dismiss transcript"
+                        aria-label={t("analyze.mic.dismissTranscript")}
                         className="shrink-0 text-text-muted hover:text-text-primary"
                       >
                         <X size={13} />
@@ -198,7 +211,7 @@ export function Dashboard() {
                       initial={{ opacity: 0, y: -6 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -6 }}
-                      className="mt-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-left text-xs text-red-600 dark:border-red-800 dark:bg-red-950/40 dark:text-red-400"
+                      className="mt-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-start text-xs text-red-600 dark:border-red-800 dark:bg-red-950/40 dark:text-red-400"
                     >
                       {speech.error}
                     </motion.p>
@@ -219,7 +232,7 @@ export function Dashboard() {
                   ))}
                 </div>
 
-                <div className="mt-8 grid gap-3 text-left sm:grid-cols-3">
+                <div className="mt-8 grid gap-3 text-start sm:grid-cols-3">
                   {( [
                     [FileText, "1", t("dashboard.steps.oneTitle"), t("dashboard.steps.oneBody")],
                     [BrainCircuit, "2", t("dashboard.steps.twoTitle"), t("dashboard.steps.twoBody")],
@@ -229,7 +242,7 @@ export function Dashboard() {
                     return (
                       <div key={step as string} className="rounded-2xl border border-border bg-bg-elevated/60 p-4">
                         <div className="mb-3 flex items-center gap-2 text-xs font-semibold text-accent-primary">
-                          <StepIcon size={15} /> STEP {step}
+                          <StepIcon size={15} /> {t("dashboard.stepLabel", { step })}
                         </div>
                         <p className="text-sm font-semibold text-text-primary">{title}</p>
                         <p className="mt-1 text-xs leading-5 text-text-muted">{body}</p>

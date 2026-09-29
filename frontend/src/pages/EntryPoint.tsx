@@ -64,7 +64,7 @@ export function EntryPoint() {
       ) : (
         <div className="mt-8 grid gap-3">
           {entries.map((entry, index) => (
-            <button key={`${entry.timestamp}-${index}`} type="button" onClick={() => navigate("/results", { state: { result: entry.response } })} className="rounded-2xl border border-border bg-bg-elevated p-5 text-left transition-colors hover:border-accent-primary/50 hover:bg-surface-muted">
+            <button key={`${entry.timestamp}-${index}`} type="button" onClick={() => navigate("/results", { state: { result: entry.response } })} className="rounded-2xl border border-border bg-bg-elevated p-5 text-start transition-colors hover:border-accent-primary/50 hover:bg-surface-muted">
               <p className="line-clamp-2 text-sm font-medium text-text-primary">{entry.query}</p>
               <p className="mt-2 text-xs text-text-muted">{relativeTime(entry.timestamp, t)}</p>
             </button>

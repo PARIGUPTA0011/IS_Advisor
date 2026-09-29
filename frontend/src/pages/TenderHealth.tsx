@@ -1,9 +1,11 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { FileSearch, Upload, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { tenderHealth } from "../api/tenderHealth";
 import type { TenderHealthReport } from "../api/tenderHealth";
 
 export default function TenderHealth() {
+  const { t } = useTranslation();
   const [file, setFile] = useState<File | null>(null);
   const [report, setReport] = useState<TenderHealthReport | null>(null);
   const [loading, setLoading] = useState(false);
@@ -21,7 +23,7 @@ export default function TenderHealth() {
       setReport(result);
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "Failed to analyze tender.",
+        err instanceof Error ? err.message : t("tenderHealth.analysisFailed"),
       );
     } finally {
       setLoading(false);
@@ -37,17 +39,16 @@ export default function TenderHealth() {
           </div>
           <div>
             <h1 className="font-display text-2xl font-semibold tracking-tight">
-              Tender Health Check
+              {t("tenderHealth.title")}
             </h1>
             <p className="text-sm text-text-secondary">
-              Audit cited Indian Standards and identify outdated references.
+              {t("tenderHealth.subtitle")}
             </p>
           </div>
         </div>
 
         <p className="max-w-3xl text-sm leading-6 text-text-secondary">
-          Upload a tender to identify cited standards, withdrawn standards,
-          replacements, successor parts, and items without standard references.
+          {t("tenderHealth.description")}
         </p>
       </div>
 
@@ -58,10 +59,10 @@ export default function TenderHealth() {
 
             <div>
               <p className="text-sm font-medium text-text-primary">
-                {file ? file.name : "Choose a tender"}
+                {file ? file.name : t("tenderHealth.chooseTender")}
               </p>
               <p className="text-xs text-text-muted">
-                PDF or TXT
+                {t("tenderHealth.fileTypes")}
               </p>
             </div>
 
@@ -83,7 +84,7 @@ export default function TenderHealth() {
             disabled={!file || loading}
             className="rounded-xl bg-accent-primary px-5 py-3 text-sm font-semibold text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {loading ? "Analyzing..." : "Analyze Tender"}
+            {loading ? t("tenderHealth.analyzing") : t("tenderHealth.analyze")}
           </button>
         </div>
 
@@ -105,15 +106,10 @@ export default function TenderHealth() {
                 />
                 <div>
                   <p className="font-semibold text-amber-900">
-                    Action required: {report.outdated_standards} outdated{" "}
-                    {report.outdated_standards === 1
-                      ? "standard"
-                      : "standards"}{" "}
-                    found
+                    {t("tenderHealth.actionRequired", { count: report.outdated_standards })}
                   </p>
                   <p className="mt-1 text-sm text-amber-800">
-                    Review the replacement or successor parts shown below
-                    before using the cited standard.
+                    {t("tenderHealth.reviewReplacements")}
                   </p>
                 </div>
               </div>
@@ -127,11 +123,10 @@ export default function TenderHealth() {
                 />
                 <div>
                   <p className="font-semibold text-green-900">
-                    No outdated standards found
+                    {t("tenderHealth.noneOutdated")}
                   </p>
                   <p className="mt-1 text-sm text-green-800">
-                    All cited standards in this tender are currently listed
-                    as current.
+                    {t("tenderHealth.allCurrent")}
                   </p>
                 </div>
               </div>
@@ -139,30 +134,30 @@ export default function TenderHealth() {
           )}
           <section>
             <h2 className="mb-4 font-display text-lg font-semibold">
-              Report Summary
+              {t("tenderHealth.summary")}
             </h2>
 
             <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
-              <SummaryCard label="Total items" value={report.total_items} />
+              <SummaryCard label={t("tenderHealth.totalItems")} value={report.total_items} />
               <SummaryCard
-                label="With citations"
+                label={t("tenderHealth.withCitations")}
                 value={report.items_with_citations}
               />
               <SummaryCard
-                label="Without citations"
+                label={t("tenderHealth.withoutCitations")}
                 value={report.items_without_citations}
               />
               <SummaryCard
-                label="Unique standards"
+                label={t("tenderHealth.uniqueStandards")}
                 value={report.unique_standards_cited}
               />
               <SummaryCard
-                label="Current"
+                label={t("tenderHealth.current")}
                 value={report.current_standards}
                 icon={<CheckCircle2 size={16} />}
               />
               <SummaryCard
-                label="Outdated"
+                label={t("tenderHealth.outdated")}
                 value={report.outdated_standards}
                 icon={<AlertTriangle size={16} />}
               />
@@ -171,7 +166,7 @@ export default function TenderHealth() {
 
           <section>
             <h2 className="mb-4 font-display text-lg font-semibold">
-              Cited Standards
+              {t("tenderHealth.citedStandards")}
             </h2>
 
             <div className="space-y-3">
@@ -204,14 +199,14 @@ export default function TenderHealth() {
                             : "bg-green-100 text-green-800"
                         }`}
                       >
-                        {outdated ? "Outdated" : "Current"}
+                        {outdated ? t("tenderHealth.outdated") : t("tenderHealth.current")}
                       </span>
                     </div>
 
                     {standard.replaced_by_is && (
                       <div className="mt-4 rounded-xl bg-amber-50 px-4 py-3">
                         <p className="text-xs font-semibold uppercase tracking-wide text-amber-800">
-                          Replaced by
+                          {t("tenderHealth.replacedBy")}
                         </p>
                         <p className="mt-1 text-sm font-medium text-amber-950">
                           {standard.replaced_by_is}
@@ -222,7 +217,7 @@ export default function TenderHealth() {
                     {standard.successor_parts.length > 0 && (
                       <div className="mt-3">
                         <p className="text-xs font-semibold uppercase tracking-wide text-text-muted">
-                          Successor parts
+                          {t("tenderHealth.successorParts")}
                         </p>
                         <p className="mt-1 text-sm text-text-secondary">
                           {standard.successor_parts.join(", ")}
@@ -243,12 +238,12 @@ export default function TenderHealth() {
 
           <section>
             <h2 className="mb-4 font-display text-lg font-semibold">
-              Items Without Standards
+              {t("tenderHealth.itemsWithoutStandards")}
             </h2>
 
             {report.items_without_standards.length === 0 ? (
               <div className="rounded-2xl border border-border bg-bg-elevated p-5 text-sm text-text-secondary">
-                Every parsed item cites a standard.
+                {t("tenderHealth.allItemsCited")}
               </div>
             ) : (
               <div className="rounded-2xl border border-border bg-bg-elevated p-5 shadow-sm">

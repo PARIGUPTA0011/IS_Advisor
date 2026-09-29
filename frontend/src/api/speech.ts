@@ -1,4 +1,5 @@
-import { API_BASE_URL, ApiError } from "./client";
+import i18n from "../i18n";
+import { API_BASE_URL, ApiError, describeTimeout, readErrorFrom, withTimeout } from "./client";
 import type { TranscribeResponse } from "../types/api";
 
 /**
@@ -28,22 +29,21 @@ export async function transcribeAudio(
 
   let response: Response;
   try {
-    response = await fetch(`${API_BASE_URL}/transcribe${query}`, {
-      method: "POST",
-      body: form,
-    });
-  } catch {
-    throw new ApiError(0, "Could not reach the IS-Advisor backend. Is it running?");
+    response = await fetch(
+      `${API_BASE_URL}/transcribe${query}`,
+      // Transcription loads the Whisper model on first use (~484MB, see
+      // speech/README.md) on top of decoding the audio itself, so it gets the
+      // same generous timeout as a translated /recommend call.
+      withTimeout({ method: "POST", body: form }),
+    );
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new ApiError(0, await describeTimeout());
+    }
+    throw new ApiError(0, i18n.t("errors.unreachable"));
   }
   if (!response.ok) {
-    let detail = `Request failed with status ${response.status}`;
-    try {
-      const body = await response.json();
-      if (body?.detail) detail = body.detail;
-    } catch {
-      // not JSON, keep generic message
-    }
-    throw new ApiError(response.status, detail);
+    throw new ApiError(response.status, await readErrorFrom(response));
   }
   return (await response.json()) as TranscribeResponse;
 }

@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Network } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import type { KnowledgeGraphEdge, KnowledgeGraphNode, Relationship } from "../../types/api";
 
 interface Props {
@@ -80,6 +81,7 @@ function edgePoints(x2: number, y2: number, r2: number) {
 }
 
 export function KnowledgeGraphView({ nodes, edges }: Props) {
+  const { t } = useTranslation();
   const retrieved = useMemo(() => nodes.filter((n) => n.retrieved), [nodes]);
   const nodeById = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes]);
 
@@ -141,24 +143,20 @@ export function KnowledgeGraphView({ nodes, edges }: Props) {
             <Network size={18} />
           </span>
           <div>
-            <h2 className="text-sm font-semibold text-text-primary">Knowledge graph</h2>
-            <p className="text-xs text-text-muted">
-              Select a standard to trace what it requires, what it replaced, and what replaced it
-            </p>
+            <h2 className="text-sm font-semibold text-text-primary">{t("kg.title")}</h2>
+            <p className="text-xs text-text-muted">{t("kg.subtitle")}</p>
           </div>
         </div>
         {focus && overflow > 0 && (
-          <span className="text-xs text-text-muted">+{overflow} more not drawn (limit {MAX_NEIGHBOURS})</span>
+          <span className="text-xs text-text-muted">{t("kg.moreNotDrawn", { count: overflow, limit: MAX_NEIGHBOURS })}</span>
         )}
       </div>
 
       {!focus ? (
         <div className="flex min-h-56 flex-col items-center justify-center px-6 text-center">
           <Network size={24} className="text-text-muted" />
-          <p className="mt-3 text-sm font-medium text-text-primary">No graph relationships found</p>
-          <p className="mt-1 max-w-sm text-xs text-text-muted">
-            None of the recommended standards has recorded relationships in the knowledge graph.
-          </p>
+          <p className="mt-3 text-sm font-medium text-text-primary">{t("kg.emptyTitle")}</p>
+          <p className="mt-1 max-w-sm text-xs text-text-muted">{t("kg.emptyBody")}</p>
         </div>
       ) : (
         <>
@@ -204,7 +202,7 @@ export function KnowledgeGraphView({ nodes, edges }: Props) {
                   <svg width="18" height="4" aria-hidden="true">
                     <line x1="0" y1="2" x2="18" y2="2" stroke={style.color} strokeWidth="2" strokeDasharray={style.dash} />
                   </svg>
-                  {style.label}
+                  {t(`kg.relations.${relationship}`)}
                   <span className="font-semibold text-text-primary">{count}</span>
                 </button>
               );
@@ -215,7 +213,7 @@ export function KnowledgeGraphView({ nodes, edges }: Props) {
             viewBox={`0 0 ${W} ${H}`}
             className="block h-auto w-full"
             role="img"
-            aria-label={`Relationships of ${focus.standard_id}`}
+            aria-label={t("kg.relationshipsOf", { standard: focus.standard_id })}
             onClick={() => setSelectedId(null)}
           >
             <defs>
@@ -239,7 +237,7 @@ export function KnowledgeGraphView({ nodes, edges }: Props) {
                   strokeLinecap="round"
                   opacity={dim ? 0.25 : 0.9}
                 >
-                  <title>{`${focus.standard_id} — ${style.label} — ${node.standard_id}`}</title>
+                  <title>{`${focus.standard_id} — ${t(`kg.relations.${relationship}`)} — ${node.standard_id}`}</title>
                 </line>
               );
             })}
@@ -308,7 +306,7 @@ export function KnowledgeGraphView({ nodes, edges }: Props) {
 
             {neighbours.length === 0 && (
               <text x={CX} y={CY + CENTER_R + 36} textAnchor="middle" fontSize="12" fill="var(--text-muted)">
-                No relationships of the selected types — turn on another type above
+                {t("kg.noFilteredRelationships")}
               </text>
             )}
           </svg>
@@ -320,11 +318,11 @@ export function KnowledgeGraphView({ nodes, edges }: Props) {
                   <strong className="text-sm text-text-primary">{selected.standard_id}</strong>
                   {selectedRelation && (
                     <span className="text-text-muted">
-                      {RELATIONS[selectedRelation].label.toLowerCase()} of {focus.standard_id}
+                      {t("kg.relationOf", { relation: t(`kg.relations.${selectedRelation}`), standard: focus.standard_id })}
                     </span>
                   )}
                   {selected.status === "withdrawn" && (
-                    <span className="font-medium text-[var(--status-withdrawn)]">Withdrawn</span>
+                    <span className="font-medium text-[var(--status-withdrawn)]">{t("kg.withdrawn")}</span>
                   )}
                 </div>
                 {selected.title && <p className="mt-1 text-sm text-text-secondary">{selected.title}</p>}
@@ -337,14 +335,12 @@ export function KnowledgeGraphView({ nodes, edges }: Props) {
                       setSelectedId(null);
                     }}
                   >
-                    Centre the graph on {selected.standard_id}
+                    {t("kg.centreGraphOn", { standard: selected.standard_id })}
                   </button>
                 )}
               </div>
             ) : (
-              <span className="text-text-muted">
-                Hover to highlight a relationship · click a standard for its full title
-              </span>
+              <span className="text-text-muted">{t("kg.hoverHint")}</span>
             )}
           </div>
         </>

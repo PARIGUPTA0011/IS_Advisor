@@ -30,6 +30,7 @@ neither the audio nor the transcript can tell us.
 from __future__ import annotations
 
 import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -84,6 +85,38 @@ class SpeechUnavailable(RuntimeError):
 
 _model = None
 _model_lock = threading.Lock()
+
+# Mirrors multilingual.translate.WARMUP_STATUS - same shape, same reasoning:
+# GET /health needs to tell "never attempted" apart from "loading" apart from
+# "ready", which a bare try/except around a lazy load cannot distinguish.
+WARMUP_STATUS: dict = {"state": "not_started", "elapsed_s": None, "detail": ""}
+
+
+def warm_up() -> dict:
+    """Force the Whisper model to load now rather than on the first real
+    transcription request. Same fix, same reasoning as
+    multilingual.translate.warm_up() - see that function's docstring. Never
+    raises; a failed warm-up is reported so voice input can say so honestly,
+    while text queries (which do not need this model at all) keep working."""
+    started = time.time()
+    WARMUP_STATUS.update(state="loading", elapsed_s=None, detail="")
+    try:
+        load_model()
+        elapsed = time.time() - started
+        WARMUP_STATUS.update(
+            state="ready", elapsed_s=round(elapsed, 1),
+            detail=f"faster-whisper ({config.MODEL_SIZE}) loaded in {elapsed:.1f}s",
+        )
+        print(f"[warmup] speech model ready in {elapsed:.1f}s", flush=True)
+    except SpeechUnavailable as error:
+        elapsed = time.time() - started
+        WARMUP_STATUS.update(state="failed", elapsed_s=round(elapsed, 1), detail=str(error))
+        print(f"! [warmup] speech warm-up did not succeed: {error}", flush=True)
+    except Exception as error:
+        elapsed = time.time() - started
+        WARMUP_STATUS.update(state="failed", elapsed_s=round(elapsed, 1), detail=f"{type(error).__name__}: {error}")
+        print(f"! [warmup] speech warm-up raised {type(error).__name__}: {error}", flush=True)
+    return dict(WARMUP_STATUS)
 
 
 def load_model():

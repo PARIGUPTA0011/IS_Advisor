@@ -51,8 +51,33 @@ export function Results() {
       </button>
 
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="glass-panel rounded-2xl p-5">
-        <p className="text-xs font-semibold uppercase tracking-wide text-text-muted">{t("results.title")}</p>
-        <p className="mt-1.5 text-sm text-text-secondary">"{result.query}"</p>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-text-muted">{t("results.title")}</p>
+          {/* Shown for every query, English included - result.language is the
+              backend's own detection (see multilingual.Localizer.describe()),
+              never something the frontend guesses. */}
+          {result.language && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-surface-muted px-2.5 py-1 text-[11px] font-medium text-text-secondary">
+              {t("results.detectedLanguage")}: {result.language.native_name || result.language.name}
+              {result.language.name !== "English" && ` (${result.language.name})`}
+            </span>
+          )}
+        </div>
+        <p
+          className="mt-1.5 text-sm text-text-secondary"
+          dir={result.language?.rtl ? "rtl" : undefined}
+        >
+          "{result.query}"
+        </p>
+        {/* result.query_english is only present for a non-English query - it is
+            what retrieval and the LLM actually read, kept English on purpose
+            (see rag/pipeline.py) so the reader can sanity-check what the
+            system understood even if the translation is imperfect. */}
+        {result.query_english && (
+          <p className="mt-1 text-xs italic text-text-muted">
+            {t("results.understoodAs")}: {result.query_english}
+          </p>
+        )}
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
           <ConfidenceMeter confidence={result.confidence} />
           <span className="text-xs text-text-muted">
@@ -63,7 +88,13 @@ export function Results() {
       </motion.div>
 
       <div className="mt-6 space-y-6">
-        {result.warnings.length > 0 && <WarningsBanner warnings={result.warnings} />}
+        {result.warnings.length > 0 && (
+          <WarningsBanner
+            warnings={result.warnings}
+            warningsLocalized={result.warnings_localized}
+            rtl={result.language?.rtl}
+          />
+        )}
 
         <div>
           <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-text-muted">
@@ -78,6 +109,7 @@ export function Results() {
                   evidence={result.evidence}
                   relatedStandards={result.related_standards}
                   index={i}
+                  rtl={result.language?.rtl}
                 />
               ))}
             </div>

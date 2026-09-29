@@ -7,6 +7,7 @@
     "dashboard": "Dashboard",
     "analyze": "Analyze Tender",
     "history": "History",
+    "tenderHealth": "Tender Health",
     "settings": "Settings",
     "about": "About"
   },
@@ -31,7 +32,8 @@
       "twoBody": "Search the standards corpus and graph.",
       "threeTitle": "Get recommendations",
       "threeBody": "Review evidence-backed standards."
-    }
+    },
+    "stepLabel": "STEP {{step}}"
   },
   "analyze": {
     "modeText": "Describe Procurement Requirement",
@@ -50,6 +52,7 @@
     "steps": {
       "uploading": "Uploading document",
       "extracting": "Extracting requirements",
+      "language": "Detecting language and translating if needed",
       "understanding": "Understanding specifications",
       "searching": "Searching Indian Standards",
       "building": "Building recommendations",
@@ -61,7 +64,8 @@
       "stopRecording": "Stop recording",
       "recording": "Recording…",
       "transcribing": "Transcribing…",
-      "heard": "Heard"
+      "heard": "Heard",
+      "dismissTranscript": "Dismiss transcript"
     }
   },
   "results": {
@@ -85,7 +89,10 @@
     },
     "score": "Match score",
     "newAnalysis": "New analysis",
-    "startNewAnalysis": "Start a new analysis from the Analyze page."
+    "startNewAnalysis": "Start a new analysis from the Analyze page.",
+    "detectedLanguage": "Detected",
+    "understoodAs": "Understood as",
+    "localizedNote": "Machine-translated"
   },
   "history": {
     "recentAnalyses": "Recent analyses",
@@ -145,6 +152,65 @@
     "fileTooLarge": "File exceeds the 25MB limit.",
     "unsupportedFile": "Only PDF and TXT files are supported.",
     "emptyQuery": "Please describe what you're procuring first.",
-    "retry": "Retry"
+    "retry": "Retry",
+    "requestFailed": "Request failed with status {{status}}.",
+    "unreachable": "Could not reach the IS-Advisor backend. Is it running?",
+    "timeoutGeneric": "The request took longer than expected. Please try again.",
+    "timeoutWarmingUp": "The server is still preparing language support (first-time setup after starting). Please wait a moment and try again.",
+    "timeoutTranslationFailed": "Translation isn't available on this server right now, so the request took too long. English queries still work."
+  },
+  "warmup": {
+    "preparing": "Preparing language support for the first time - this can take about 20-30 seconds. You can keep typing; English queries are not affected."
+  },
+  "tenderHealth": {
+    "title": "Tender Health Check",
+    "subtitle": "Audit cited Indian Standards and identify outdated references.",
+    "description": "Upload a tender to identify cited standards, withdrawn standards, replacements, successor parts, and items without standard references.",
+    "chooseTender": "Choose a tender",
+    "fileTypes": "PDF or TXT",
+    "analyzing": "Analyzing...",
+    "analyze": "Analyze Tender",
+    "actionRequired": "Action required: {{count}} outdated standards found",
+    "reviewReplacements": "Review the replacement or successor parts shown below before using the cited standard.",
+    "noneOutdated": "No outdated standards found",
+    "allCurrent": "All cited standards in this tender are currently listed as current.",
+    "summary": "Report Summary",
+    "totalItems": "Total items",
+    "withCitations": "With citations",
+    "withoutCitations": "Without citations",
+    "uniqueStandards": "Unique standards",
+    "current": "Current",
+    "outdated": "Outdated",
+    "citedStandards": "Cited Standards",
+    "replacedBy": "Replaced by",
+    "successorParts": "Successor parts",
+    "itemsWithoutStandards": "Items Without Standards",
+    "allItemsCited": "Every parsed item cites a standard.",
+    "analysisFailed": "Failed to analyze tender."
+  },
+  "languageSwitcher": {
+    "ariaLabel": "Interface language",
+    "search": "Search languages",
+    "noResults": "No languages found"
+  },
+  "kg": {
+    "title": "Knowledge graph",
+    "subtitle": "Select a standard to trace what it requires, what it replaced, and what replaced it",
+    "moreNotDrawn": "+{{count}} more not drawn (limit {{limit}})",
+    "emptyTitle": "No graph relationships found",
+    "emptyBody": "None of the recommended standards has recorded relationships in the knowledge graph.",
+    "noFilteredRelationships": "No relationships of the selected types — turn on another type above",
+    "relationshipsOf": "Relationships of {{standard}}",
+    "withdrawn": "Withdrawn",
+    "centreGraphOn": "Centre the graph on {{standard}}",
+    "hoverHint": "Hover to highlight a relationship · click a standard for its full title",
+    "relationOf": "{{relation}} of {{standard}}",
+    "relations": {
+      "NORMATIVELY_REFERENCES": "Normative reference",
+      "REPLACED_BY": "Replaced by",
+      "REPLACES": "Supersedes",
+      "REFERENCES": "Cites",
+      "REFERENCED_BY": "Cited by"
+    }
   }
 }

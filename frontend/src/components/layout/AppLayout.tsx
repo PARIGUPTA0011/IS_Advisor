@@ -14,7 +14,7 @@ import { LanguageSwitcher } from "./LanguageSwitcher";
 const NAV_ITEMS = [
   { to: "/", label: "nav.dashboard", icon: LayoutGrid, end: true },
   { to: "/analyze", label: "nav.analyze", icon: Search, end: false },
-  { to: "/tender-health", label: "Tender Health", icon: FileSearch, end: false },
+  { to: "/tender-health", label: "nav.tenderHealth", icon: FileSearch, end: false },
   { to: "/history", label: "nav.history", icon: Clock3, end: false },
   { to: "/settings", label: "nav.settings", icon: SettingsIcon, end: false },
   { to: "/about", label: "nav.about", icon: Info, end: false },
@@ -25,7 +25,7 @@ export function AppLayout() {
 
   return (
     <div className="flex min-h-svh bg-bg text-text-primary">
-      <aside className="hidden w-60 shrink-0 flex-col border-r border-border bg-bg-elevated px-4 py-6 md:flex">
+      <aside className="hidden w-60 shrink-0 flex-col border-e border-border bg-bg-elevated px-4 py-6 md:flex">
         <div className="mb-8 flex items-center gap-2.5 px-2">
           <Logo />
           <span className="font-display text-lg font-semibold tracking-tight">{t("app.name")}</span>

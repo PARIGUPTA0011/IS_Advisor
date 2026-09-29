@@ -169,11 +169,21 @@ class Localizer:
         return self.label(english).text
 
     def describe(self) -> dict:
-        """What a response should say about its own language handling."""
+        """What a response should say about its own language handling.
+
+        `script` and `rtl` are here (not just left for the frontend to derive)
+        so there is exactly one place that knows which scripts read
+        right-to-left - Urdu, Sindhi, Kashmiri, Arabic, Persian all share the
+        "Arabic" script in multilingual/languages.py, and a frontend
+        maintaining its own copy of that list is how the two definitions
+        drift apart.
+        """
         return {
             "code": self.target,
             "name": self.language.name,
             "native_name": self.language.native_name,
+            "script": self.language.script,
+            "rtl": self.language.script == "Arabic",
             "tier": self.language.tier,
             "localized": self.active,
             "titles_translated": bool(self.active and config.TRANSLATE_TITLES),

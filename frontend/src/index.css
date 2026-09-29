@@ -5,8 +5,20 @@
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-display: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* One family per script the interface can appear in; the browser picks
+     whichever entry actually covers a given character (per-codepoint font
+     fallback), so Marathi headings and an Ol Chiki sidebar both render from
+     a real face instead of the OS's default substitute. */
+  --font-sans: "Inter", "Noto Sans", "Noto Sans Devanagari", "Noto Sans Bengali",
+    "Noto Sans Gujarati", "Noto Sans Gurmukhi", "Noto Sans Kannada", "Noto Sans Malayalam",
+    "Noto Sans Oriya", "Noto Sans Tamil", "Noto Sans Telugu", "Noto Sans Arabic",
+    "Noto Sans Ol Chiki", "Noto Sans Meetei Mayek", "Noto Sans SC", "Noto Sans JP",
+    "Noto Sans KR", "Noto Sans Thai", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Inter", "Noto Sans", "Noto Sans Devanagari", "Noto Sans Bengali",
+    "Noto Sans Gujarati", "Noto Sans Gurmukhi", "Noto Sans Kannada", "Noto Sans Malayalam",
+    "Noto Sans Oriya", "Noto Sans Tamil", "Noto Sans Telugu", "Noto Sans Arabic",
+    "Noto Sans Ol Chiki", "Noto Sans Meetei Mayek", "Noto Sans SC", "Noto Sans JP",
+    "Noto Sans KR", "Noto Sans Thai", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 
   --color-ink-50: #f4f5fb;
   --color-ink-100: #e7e9f5;
@@ -135,6 +147,14 @@
 
 * {
   border-color: var(--border);
+}
+
+/* Indeterminate progress bar for WarmupBanner - referenced via Tailwind's
+   arbitrary `animate-[warmup-progress_...]` utility, which needs this
+   @keyframes to actually exist somewhere in the stylesheet. */
+@keyframes warmup-progress {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
 }
 
 html,

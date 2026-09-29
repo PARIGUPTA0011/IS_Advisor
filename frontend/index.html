@@ -6,8 +6,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!--
+      Interface text can be in any of 37 languages across a dozen+ scripts.
+      Inter/Cormorant only cover Latin, so every non-Latin script would fall
+      back to whatever the OS happens to ship (spotty for Ol Chiki, Meetei
+      Mayek, Santali on many systems). Loading the matching Noto Sans family
+      per script means the browser's per-codepoint font fallback always has
+      a real face to land on, not just the OS default.
+    -->
     <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Cormorant+Garamond:wght@500;600;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Cormorant+Garamond:wght@500;600;700&family=Noto+Sans:wght@400;500;600;700&family=Noto+Sans+Devanagari:wght@400;500;600;700&family=Noto+Sans+Bengali:wght@400;500;600;700&family=Noto+Sans+Gujarati:wght@400;500;600;700&family=Noto+Sans+Gurmukhi:wght@400;500;600;700&family=Noto+Sans+Kannada:wght@400;500;600;700&family=Noto+Sans+Malayalam:wght@400;500;600;700&family=Noto+Sans+Oriya:wght@400;500;600;700&family=Noto+Sans+Tamil:wght@400;500;600;700&family=Noto+Sans+Telugu:wght@400;500;600;700&family=Noto+Sans+Arabic:wght@400;500;600;700&family=Noto+Sans+Ol+Chiki:wght@400;500;600;700&family=Noto+Sans+Meetei+Mayek:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;600;700&family=Noto+Sans+Thai:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
     <title>IS-Advisor</title>
